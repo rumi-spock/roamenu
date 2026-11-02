@@ -5,12 +5,8 @@
       "path": "."
     },
     {
-      "name": "shared-utils",
-      "path": "../shared-utils"
-    },
-    {
-      "name": "auth",
-      "path": "../auth"
+      "name": "roamenu-website",
+      "path": "../roamenu-website"
     }
   ]
 }

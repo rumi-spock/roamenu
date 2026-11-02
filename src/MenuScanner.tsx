@@ -4,22 +4,21 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import * as Linking from 'expo-linking';
 import * as Speech from 'expo-speech';
-import * as WebBrowser from 'expo-web-browser';
 import QRCode from 'qrcode';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Modal, Platform, SafeAreaView, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Circle, Path, Rect, Svg } from 'react-native-svg';
-import { languageOptions, type SharedLanguage } from '@splitmesa/shared-utils/translations';
+import { languageOptions, type SharedLanguage } from '@roamenu/shared-utils/translations';
 import { applyPreferenceMatches, formatMenuPrice, normalisePreferenceLabel, translateMenuSection, type MenuItem, type MenuPreference, type MenuScanResult } from './menu-domain';
 import { loadAuthToken, MenuApi, saveAuthToken, type UserProfile } from './menu-api';
 
 const activeScanKey = 'roamenu.active-menu-scan';
 const languageKey = 'roamenu-language';
-const apiUrl = (process.env.EXPO_PUBLIC_API_URL?.trim() || 'https://splitmesa.com').replace(/\/+$/, '');
+const apiUrl = (process.env.EXPO_PUBLIC_API_URL?.trim() || 'http://localhost:3000').replace(/\/+$/, '');
+const publicSiteUrl = (process.env.EXPO_PUBLIC_PUBLIC_SITE_URL?.trim() || 'https://roamenu.vercel.app').replace(/\/+$/, '');
 const translationPackRequestVersion = '2';
 const translationFetchCache = process.env.NODE_ENV === 'production' ? 'default' : 'no-store';
-const authUrl = (process.env.EXPO_PUBLIC_AUTH_URL?.trim() || apiUrl).replace(/\/+$/, '');
 const mockAuthEnabled = process.env.EXPO_PUBLIC_MOCK_AUTH === '1';
 const mockUserName = process.env.EXPO_PUBLIC_MOCK_USER_NAME?.trim() || 'Local User';
 const scanLanguages = new Set(['en', 'es', 'pt', 'nl', 'uk', 'ro', 'lt', 'sv', 'fi', 'nb', 'da', 'ko']);
@@ -188,7 +187,45 @@ export default function MenuScanner() {
     void Speech.stop();
   }, []);
 
-  const menuUrl = shareId ? `${apiUrl}/menu/${shareId}` : null;
+  useEffect(() => {
+    let active = true;
+    const loadSharedMenu = async (url: string) => {
+      const parsed = Linking.parse(url);
+      const shareId = parsed.hostname === 'menu' ? parsed.path?.split('/')[0] : parsed.path?.split('/').filter(Boolean).pop();
+      if (!shareId) return;
+      setLoading(true);
+      const result = await api.getMenuShare(shareId);
+      if (!active) return;
+      if (!result.menu) {
+        setLoading(false);
+        Alert.alert('Shared menu', result.error ?? 'Unable to load the shared menu.');
+        return;
+      }
+      const sharedItems = applyPreferenceMatches(result.menu.items.map((item) => ({ ...item, matchedPreferences: [] })), preferences);
+      setItems(sharedItems);
+      setSections(result.menu.sections);
+      setCurrency(result.menu.currency);
+      setSourceLanguage(result.menu.sourceLanguage || 'en');
+      setShareId(shareId);
+      setSelectedSection(null);
+      const saved: SavedScan = { sourceLanguage: result.menu.sourceLanguage, currency: result.menu.currency, sections: result.menu.sections, items: result.menu.items, shareId };
+      setRecentScan(saved);
+      await AsyncStorage.setItem(activeScanKey, JSON.stringify(saved));
+      setLoading(false);
+    };
+
+    void Linking.getInitialURL().then((url) => {
+      if (url) return loadSharedMenu(url);
+      return undefined;
+    });
+    const subscription = Linking.addEventListener('url', (event) => void loadSharedMenu(event.url));
+    return () => {
+      active = false;
+      subscription.remove();
+    };
+  }, [preferences]);
+
+  const menuUrl = shareId ? `${publicSiteUrl}/menu/${shareId}` : null;
   const visibleItems = selectedSection === null ? items : items.filter((item) => item.section === selectedSection);
   const qrCodeMatrix = useMemo(() => {
     if (!menuUrl) return null;
@@ -202,12 +239,10 @@ export default function MenuScanner() {
 
   useEffect(() => {
     void (async () => {
-      const callbackToken = Platform.OS === 'web' ? new URLSearchParams(window.location.search).get('token') : null;
-      const token = callbackToken ?? await loadAuthToken();
+      const token = await loadAuthToken();
       const savedLanguage = await AsyncStorage.getItem(languageKey);
       if (languageOptions.some((option) => option.code === savedLanguage)) setLanguage(savedLanguage as SharedLanguage);
       if (token) {
-        if (callbackToken && Platform.OS === 'web') window.history.replaceState({}, '', window.location.pathname);
         await saveAuthToken(token);
         api.setAuthToken(token);
         const result = await api.getProfile();
@@ -261,33 +296,6 @@ export default function MenuScanner() {
     })();
     return () => controller.abort();
   }, [language]);
-
-  const signIn = async (provider: 'google' | 'apple') => {
-    setAuthError('');
-    const redirectUri = Platform.OS === 'web' ? `${window.location.origin}/` : Linking.createURL('');
-    const callbackUrl = `${authUrl}/api/mobile-auth/callback?redirect_uri=${encodeURIComponent(redirectUri)}`;
-    const url = `${authUrl}/api/mobile-auth/start/${provider}?callbackUrl=${encodeURIComponent(callbackUrl)}`;
-    try {
-      if (Platform.OS === 'web') {
-        window.location.assign(url);
-        return;
-      }
-      const result = await WebBrowser.openAuthSessionAsync(url, redirectUri);
-      if (result.type !== 'success') return;
-      const token = new URL(result.url).searchParams.get('token');
-      if (!token) throw new Error('No mobile session was returned.');
-      await saveAuthToken(token);
-      api.setAuthToken(token);
-      const profileResult = await api.getProfile();
-      if (profileResult.profile) {
-        setProfile(profileResult.profile);
-        setPreferences(profileResult.profile.foodPreferences);
-        setPreferenceInput(profileResult.profile.foodPreferences.map((preference) => preference.label).join(', '));
-      }
-    } catch (error) {
-      setAuthError(localiseAuthError(error instanceof Error ? error.message : 'Sign-in failed.', authLabels));
-    }
-  };
 
   const submitPasswordAuth = async () => {
     setAuthError('');
@@ -537,7 +545,7 @@ export default function MenuScanner() {
   };
 
   if (authLoading) return <CenteredState text="Loading Roamenu..." />;
-  if (!api.getAuthToken() || !profile) {
+  if ((!api.getAuthToken() || !profile) && items.length === 0) {
     return (
       <SafeAreaView style={styles.container}>
         <StatusBar style="dark" />
@@ -552,9 +560,6 @@ export default function MenuScanner() {
           <TouchableOpacity style={styles.primaryButton} onPress={() => void submitPasswordAuth()} disabled={passwordAuthBusy}><Text style={styles.primaryButtonText}>{passwordAuthBusy ? 'Please wait...' : passwordAuthMode === 'register' ? authLabels.createAccount : authLabels.signIn}</Text></TouchableOpacity>
           <TouchableOpacity onPress={() => { setPasswordAuthMode(passwordAuthMode === 'signIn' ? 'register' : 'signIn'); setAuthError(''); }}><Text style={styles.link}>{passwordAuthMode === 'signIn' ? authLabels.switchToRegister : authLabels.switchToSignIn}</Text></TouchableOpacity>
           {authError ? <Text style={styles.error}>{authError}</Text> : null}
-          <Text style={styles.authDivider}>{authLabels.orContinueWith}</Text>
-          <TouchableOpacity style={styles.primaryButton} onPress={() => void signIn('google')}><Text style={styles.primaryButtonText}>{text.continueGoogle}</Text></TouchableOpacity>
-          <TouchableOpacity style={styles.secondaryButton} onPress={() => void signIn('apple')}><Text style={styles.secondaryButtonText}>{text.continueApple}</Text></TouchableOpacity>
           {mockAuthEnabled ? <TouchableOpacity style={styles.secondaryButton} onPress={() => void mockSignIn()}><Text style={styles.secondaryButtonText}>{text.localAuth}</Text></TouchableOpacity> : null}
         </View>
       </SafeAreaView>
@@ -596,7 +601,7 @@ export default function MenuScanner() {
         <SafeAreaView style={styles.container}>
           <View style={styles.accountHeader}><Text style={styles.title}>{text.account}</Text><TouchableOpacity onPress={() => setAccountVisible(false)}><Text style={styles.link}>{text.close}</Text></TouchableOpacity></View>
           <ScrollView contentContainerStyle={styles.accountContent}>
-            <Text style={styles.cardTitle}>{profile.displayName}</Text>
+            <Text style={styles.cardTitle}>{profile?.displayName ?? 'Roamenu'}</Text>
             <View style={styles.accountSection}>
               <Text style={styles.cardTitle}>{text.preferences}</Text>
               <Text style={styles.cardHint}>{text.preferenceHint}</Text>
@@ -635,7 +640,7 @@ function AccountIcon() {
 
 function RoamenuLogo({ compact = false }: { compact?: boolean }) {
   return (
-    <View style={[styles.logoRow, compact && styles.compactLogoRow]} accessible accessibilityLabel="Roamenu by Split Mesa">
+    <View style={[styles.logoRow, compact && styles.compactLogoRow]} accessible accessibilityLabel="Roamenu">
       <Svg width={compact ? 30 : 38} height={compact ? 30 : 38} viewBox="0 0 64 64" fill="none">
         <Circle cx="32" cy="32" r="26" fill="#FFF4D6" stroke="#007C83" strokeWidth="3" />
         <Path d="M16 35h32M20 40c2.5 6 7 9 12 9s9.5-3 12-9" stroke="#007C83" strokeWidth="3" strokeLinecap="round" />
@@ -643,7 +648,7 @@ function RoamenuLogo({ compact = false }: { compact?: boolean }) {
       </Svg>
       <View style={styles.logoType}>
         <Text style={[styles.logoName, compact && styles.compactLogoName]}>ROAMENU</Text>
-        <Text style={[styles.logoByline, compact && styles.compactLogoByline]}>BY SPLIT MESA</Text>
+        <Text style={[styles.logoByline, compact && styles.compactLogoByline]}>BY ROAMENU</Text>
       </View>
     </View>
   );

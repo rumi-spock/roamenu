@@ -20,6 +20,16 @@ function normaliseBaseUrl(url: string): string {
   return url.trim().replace(/\/+$/, '');
 }
 
+async function readJson<T>(response: Response): Promise<T | null> {
+  const body = await response.text();
+  if (!body.trim()) return null;
+  try {
+    return JSON.parse(body) as T;
+  } catch {
+    return null;
+  }
+}
+
 export class MenuApi {
   private baseUrl: string;
   private authToken: string | null = null;
@@ -43,8 +53,8 @@ export class MenuApi {
         headers: { ...this.headers(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ displayName }),
       });
-      const data = await response.json() as { token?: string; profile?: UserProfile; error?: string };
-      return response.ok ? data : { error: data.error ?? 'Unable to start mock login.' };
+      const data = await readJson<{ token?: string; profile?: UserProfile; error?: string }>(response);
+      return response.ok && data ? data : { error: data?.error ?? 'Unable to start mock login.' };
     } catch (error) {
       return { error: error instanceof Error ? error.message : 'Network request failed.' };
     }
@@ -57,8 +67,8 @@ export class MenuApi {
         headers: { ...this.headers(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
       });
-      const data = await response.json() as { accessToken?: string; profile?: UserProfile | null; error?: string };
-      return response.ok && data.accessToken ? { token: data.accessToken, profile: data.profile } : { error: data.error ?? 'Unable to sign in.' };
+      const data = await readJson<{ accessToken?: string; profile?: UserProfile | null; error?: string }>(response);
+      return response.ok && data?.accessToken ? { token: data.accessToken, profile: data.profile } : { error: data?.error ?? 'Unable to sign in.' };
     } catch (error) {
       return { error: error instanceof Error ? error.message : 'Network request failed.' };
     }
@@ -71,8 +81,8 @@ export class MenuApi {
         headers: { ...this.headers(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password, displayName }),
       });
-      const data = await response.json() as { accessToken?: string; profile?: UserProfile; error?: string };
-      return response.ok && data.accessToken ? { token: data.accessToken, profile: data.profile } : { error: data.error ?? 'Unable to create your account.' };
+      const data = await readJson<{ accessToken?: string; profile?: UserProfile; error?: string }>(response);
+      return response.ok && data?.accessToken ? { token: data.accessToken, profile: data.profile } : { error: data?.error ?? 'Unable to create your account.' };
     } catch (error) {
       return { error: error instanceof Error ? error.message : 'Network request failed.' };
     }
@@ -96,8 +106,8 @@ export class MenuApi {
         body: formData,
         headers: this.headers(),
       });
-      const data = await response.json() as MenuScanResult;
-      return response.ok ? data : { sourceLanguage: '', currency: null, sections: [], items: [], code: data.code, error: data.error ?? 'Failed to scan menu.' };
+      const data = await readJson<MenuScanResult>(response);
+      return response.ok && data ? data : { sourceLanguage: '', currency: null, sections: [], items: [], code: data?.code, error: data?.error ?? 'Failed to scan menu.' };
     } catch (error) {
       return { sourceLanguage: '', currency: null, sections: [], items: [], error: error instanceof Error ? error.message : 'Network request failed.' };
     }
@@ -106,8 +116,8 @@ export class MenuApi {
   async getProfile(): Promise<{ profile?: UserProfile | null; error?: string }> {
     try {
       const response = await fetch(`${this.baseUrl}/api/profile`, { headers: this.headers() });
-      const data = await response.json() as { profile?: UserProfile | null; error?: string };
-      return response.ok ? data : { error: data.error ?? 'Unable to load your profile.' };
+      const data = await readJson<{ profile?: UserProfile | null; error?: string }>(response);
+      return response.ok && data ? data : { error: data?.error ?? 'Unable to load your profile.' };
     } catch (error) {
       return { error: error instanceof Error ? error.message : 'Network request failed.' };
     }
@@ -120,8 +130,8 @@ export class MenuApi {
         headers: { ...this.headers(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ displayName, foodPreferences }),
       });
-      const data = await response.json() as { profile?: UserProfile; error?: string };
-      return response.ok ? data : { error: data.error ?? 'Unable to save your preferences.' };
+      const data = await readJson<{ profile?: UserProfile; error?: string }>(response);
+      return response.ok && data ? data : { error: data?.error ?? 'Unable to save your preferences.' };
     } catch (error) {
       return { error: error instanceof Error ? error.message : 'Network request failed.' };
     }
@@ -133,8 +143,8 @@ export class MenuApi {
         method: 'DELETE',
         headers: this.headers(),
       });
-      const data = await response.json() as { success?: boolean; error?: string };
-      return response.ok && data.success ? { success: true } : { success: false, error: data.error ?? 'Unable to delete your account.' };
+      const data = await readJson<{ success?: boolean; error?: string }>(response);
+      return response.ok && data?.success ? { success: true } : { success: false, error: data?.error ?? 'Unable to delete your account.' };
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : 'Network request failed.' };
     }
@@ -147,8 +157,20 @@ export class MenuApi {
         headers: { ...this.headers(), 'Content-Type': 'application/json' },
         body: JSON.stringify(menu),
       });
-      const data = await response.json() as { shareId?: string; error?: string };
-      return response.ok ? data : { error: data.error ?? 'Unable to create a share link.' };
+      const data = await readJson<{ shareId?: string; error?: string }>(response);
+      return response.ok && data ? data : { error: data?.error ?? 'Unable to create a share link.' };
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : 'Network request failed.' };
+    }
+  }
+
+  async getMenuShare(shareId: string): Promise<{ menu?: SharedMenu; error?: string }> {
+    try {
+      const response = await fetch(`${this.baseUrl}/api/menu-shares/${encodeURIComponent(shareId)}`, {
+        headers: this.headers(),
+      });
+      const data = await readJson<{ menu?: SharedMenu; error?: string }>(response);
+      return response.ok && data?.menu ? { menu: data.menu } : { error: data?.error ?? 'Unable to load the shared menu.' };
     } catch (error) {
       return { error: error instanceof Error ? error.message : 'Network request failed.' };
     }

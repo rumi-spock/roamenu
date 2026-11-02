@@ -7,7 +7,6 @@
     "scheme": "roamenu",
     "userInterfaceStyle": "automatic",
     "plugins": [
-      "expo-web-browser",
       [
         "expo-image-picker",
         {
