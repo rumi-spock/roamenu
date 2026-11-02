@@ -1,0 +1,23 @@
+{
+  "expo": {
+    "name": "Roamenu",
+    "slug": "roamenu",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "roamenu",
+    "userInterfaceStyle": "automatic",
+    "plugins": [
+      "expo-web-browser",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Roamenu to choose menu photos.",
+          "cameraPermission": "Allow Roamenu to take menu photos."
+        }
+      ]
+    ],
+    "web": {
+      "bundler": "metro"
+    }
+  }
+}

@@ -1,0 +1,9 @@
+# Keep the EAS archive limited to source and build inputs.
+node_modules
+.expo
+.git
+.env*
+.envrc
+*.code-workspace
+README.md
+500

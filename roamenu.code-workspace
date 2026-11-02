@@ -1,0 +1,16 @@
+{
+  "folders": [
+    {
+      "name": "roamenu",
+      "path": "."
+    },
+    {
+      "name": "shared-utils",
+      "path": "../shared-utils"
+    },
+    {
+      "name": "auth",
+      "path": "../auth"
+    }
+  ]
+}
