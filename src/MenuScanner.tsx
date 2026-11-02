@@ -12,6 +12,7 @@ import { Circle, Path, Rect, Svg } from 'react-native-svg';
 import { languageOptions, type SharedLanguage } from '@roamenu/shared-utils/translations';
 import { applyPreferenceMatches, formatMenuPrice, normalisePreferenceLabel, translateMenuSection, type MenuItem, type MenuPreference, type MenuScanResult } from './menu-domain';
 import { loadAuthToken, MenuApi, saveAuthToken, type UserProfile } from './menu-api';
+import { extractSharedMenuId } from './shared-menu-link';
 
 const activeScanKey = 'roamenu.active-menu-scan';
 const languageKey = 'roamenu-language';
@@ -190,8 +191,7 @@ export default function MenuScanner() {
   useEffect(() => {
     let active = true;
     const loadSharedMenu = async (url: string) => {
-      const parsed = Linking.parse(url);
-      const shareId = parsed.hostname === 'menu' ? parsed.path?.split('/')[0] : parsed.path?.split('/').filter(Boolean).pop();
+      const shareId = extractSharedMenuId(url);
       if (!shareId) return;
       setLoading(true);
       const result = await api.getMenuShare(shareId);
