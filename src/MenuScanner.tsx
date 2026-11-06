@@ -4,9 +4,12 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import * as Linking from 'expo-linking';
 import * as Speech from 'expo-speech';
+import * as AppleAuthentication from 'expo-apple-authentication';
+import { AccessTokenRequest, makeRedirectUri } from 'expo-auth-session';
+import * as Google from 'expo-auth-session/providers/google';
 import QRCode from 'qrcode';
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Modal, Platform, SafeAreaView, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Modal, Platform, SafeAreaView, ScrollView, StatusBar as NativeStatusBar, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Circle, Path, Rect, Svg } from 'react-native-svg';
 import { languageOptions, type SharedLanguage } from '@roamenu/shared-utils/translations';
@@ -22,6 +25,14 @@ const translationPackRequestVersion = '2';
 const translationFetchCache = process.env.NODE_ENV === 'production' ? 'default' : 'no-store';
 const mockAuthEnabled = process.env.EXPO_PUBLIC_MOCK_AUTH === '1';
 const mockUserName = process.env.EXPO_PUBLIC_MOCK_USER_NAME?.trim() || 'Local User';
+const googleIosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID?.trim() || '';
+const googleAndroidClientId = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID?.trim() || '';
+const googleWebClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID?.trim() || '';
+const googleWebRedirectUri = process.env.EXPO_PUBLIC_GOOGLE_WEB_REDIRECT_URI?.trim() || '';
+const googleNativeClientId = Platform.OS === 'ios' ? googleIosClientId : googleAndroidClientId;
+const googleNativeRedirectUri = googleNativeClientId
+  ? `com.googleusercontent.apps.${googleNativeClientId.replace(/\.apps\.googleusercontent\.com$/, '')}:/oauthredirect`
+  : 'roamenu:/oauthredirect';
 const scanLanguages = new Set(['en', 'es', 'pt', 'nl', 'uk', 'ro', 'lt', 'sv', 'fi', 'nb', 'da', 'ko']);
 const speechLocales: Record<string, string> = {
   en: 'en-US', es: 'es-ES', pt: 'pt-PT', nl: 'nl-NL', uk: 'uk-UA', ro: 'ro-RO', lt: 'lt-LT', sv: 'sv-SE', fi: 'fi-FI', nb: 'nb-NO', da: 'da-DK',
@@ -46,6 +57,23 @@ const uiText = {
   da: { intelligentScan: 'Intelligent menuskanning', chooseConfidence: 'Vælg med tryghed.', description: 'Forstå hver ret, dens ingredienser, og om den passer til dine præferencer.', scanMenu: 'Scan menuen', scanHint: 'Oversæt, forstå og vælg', recent: 'Gå tilbage til seneste menu', scannedItems: 'scannede retter', yourMenu: 'Din menu', account: 'Konto', close: 'Luk', preferences: 'Madpræferencer', preferenceHint: 'Adskil mad eller ingredienser, du undgår, med kommaer.', language: 'Sprog', languageHint: 'Bruges til menuoversættelse og scanningsresultater.', savePreferences: 'Gem præferencer', logOut: 'Log ud', deleteAccount: 'Slet konto', beforeScan: 'Før vi scanner', promptHint: 'Angiv præferencer eller allergier, så fremhæver vi relevante retter.', saveNextTime: 'Gem til næste gang', cancel: 'Annuller', analysing: 'Analyserer din menu', analysingHint: 'Vi oversætter retter, tjekker allergener og organiserer resultaterne.' },
   ko: { intelligentScan: '지능형 메뉴 스캔', chooseConfidence: '안심하고 선택하세요.', description: '번역을 넘어 각 요리와 재료를 이해하고, 나의 선호에 맞는지 확인하세요.', scanMenu: '메뉴 스캔', scanHint: '번역하고, 이해하고, 선택하세요', recent: '최근 메뉴로 돌아가기', scannedItems: '개 메뉴 스캔됨', yourMenu: '내 메뉴', account: '계정', close: '닫기', preferences: '음식 선호', preferenceHint: '피하는 음식이나 재료를 쉼표로 구분해 입력하세요.', language: '언어', languageHint: '메뉴 번역과 스캔 결과에 사용됩니다.', savePreferences: '선호 저장', logOut: '로그아웃', deleteAccount: '계정 삭제', beforeScan: '스캔하기 전에', promptHint: '선호 음식이나 알레르기를 알려주시면 관련 요리를 표시해 드립니다.', saveNextTime: '다음에도 저장', cancel: '취소', analysing: '메뉴를 분석하는 중', analysingHint: '요리를 번역하고 알레르기 유발 성분을 확인하는 중입니다.', authTitle: '메뉴를 스캔하고, 무엇을 주문하는지 알아보세요.', authSubtitle: 'AI로 메뉴를 스캔하고 음식 선호를 저장하려면 로그인하세요.', continueGoogle: 'Google로 계속하기', continueApple: 'Apple로 계속하기', localAuth: '로컬 사용자로 계속하기' },
 } as const;
+type LegalUiText = { sectionTitle: string; privacyPolicy: string; termsAndConditions: string };
+const legalUiText: Record<SharedLanguage, LegalUiText> = {
+  en: { sectionTitle: 'Legal', privacyPolicy: 'Privacy Policy', termsAndConditions: 'Terms and Conditions' },
+  es: { sectionTitle: 'Información legal', privacyPolicy: 'Política de privacidad', termsAndConditions: 'Términos y condiciones' },
+  pt: { sectionTitle: 'Informação legal', privacyPolicy: 'Política de privacidade', termsAndConditions: 'Termos e condições' },
+  nl: { sectionTitle: 'Juridische informatie', privacyPolicy: 'Privacybeleid', termsAndConditions: 'Algemene voorwaarden' },
+  uk: { sectionTitle: 'Юридична інформація', privacyPolicy: 'Політика конфіденційності', termsAndConditions: 'Умови використання' },
+  ro: { sectionTitle: 'Informații juridice', privacyPolicy: 'Politica de confidențialitate', termsAndConditions: 'Termeni și condiții' },
+  lt: { sectionTitle: 'Teisinė informacija', privacyPolicy: 'Privatumo politika', termsAndConditions: 'Naudojimo sąlygos' },
+  sv: { sectionTitle: 'Juridisk information', privacyPolicy: 'Integritetspolicy', termsAndConditions: 'Villkor' },
+  fi: { sectionTitle: 'Oikeudelliset tiedot', privacyPolicy: 'Tietosuojakäytäntö', termsAndConditions: 'Käyttöehdot' },
+  nb: { sectionTitle: 'Juridisk informasjon', privacyPolicy: 'Personvernerklæring', termsAndConditions: 'Vilkår og betingelser' },
+  da: { sectionTitle: 'Juridiske oplysninger', privacyPolicy: 'Privatlivspolitik', termsAndConditions: 'Vilkår og betingelser' },
+  'zh-CN': { sectionTitle: '法律信息', privacyPolicy: '隐私政策', termsAndConditions: '条款和条件' },
+  ja: { sectionTitle: '法的情報', privacyPolicy: 'プライバシーポリシー', termsAndConditions: '利用規約' },
+  ko: { sectionTitle: '법률 정보', privacyPolicy: '개인정보 처리방침', termsAndConditions: '이용약관' },
+};
 type AuthUiText = { authTitle: string; authSubtitle: string; continueGoogle: string; continueApple: string };
 const authUiText: Partial<Record<SharedLanguage, AuthUiText>> = {
   es: { authTitle: 'Escanea un menú. Descubre qué estás pidiendo.', authSubtitle: 'Inicia sesión para escanear menús con IA y guardar tus preferencias alimentarias.', continueGoogle: 'Continuar con Google', continueApple: 'Continuar con Apple' },
@@ -100,10 +128,13 @@ const passwordAuthLabels: Record<SharedLanguage, PasswordAuthLabels> = {
 };
 
 function localiseAuthError(error: string, labels: PasswordAuthLabels): string {
+  if (error.startsWith('Google ')) return error;
+  if (error.startsWith('Mock ')) return error;
   if (error.includes('valid email') || error.includes('Email and password')) return labels.emailRequired;
   if (error.includes('at least 12')) return labels.passwordTooShort;
   if (error.includes('between 2 and 80')) return labels.nameLength;
   if (error.includes('Passwords do not match')) return labels.passwordsMismatch;
+  if (error === 'Network request failed.') return 'Unable to reach the authentication server.';
   if (error === 'Authentication failed.' || error === 'Sign-in failed.' || error.includes('Authentication succeeded') || error.includes('Unable to')) return labels.authFailed;
   return labels.authFailed;
 }
@@ -178,14 +209,34 @@ export default function MenuScanner() {
   const [promptVisible, setPromptVisible] = useState(false);
   const [saveForNextTime, setSaveForNextTime] = useState(true);
   const [accountVisible, setAccountVisible] = useState(false);
+  const [displayNameEditing, setDisplayNameEditing] = useState(false);
+  const [displayNameInput, setDisplayNameInput] = useState('');
   const [language, setLanguage] = useState<SharedLanguage>('en');
   const [accountBusy, setAccountBusy] = useState(false);
   const [downloadedText, setDownloadedText] = useState<Partial<UiText>>({});
+  const [googleBusy, setGoogleBusy] = useState(false);
+  const [appleAvailable, setAppleAvailable] = useState(false);
+  const [appleBusy, setAppleBusy] = useState(false);
   const text = { ...uiText.en, ...uiText[language as UiLanguage], ...authUiText[language], ...extraUiText[language as UiLanguage], ...downloadedText };
   const authLabels = passwordAuthLabels[language];
+  const legalText = legalUiText[language];
+  const [googleRequest, googleResponse, promptGoogle] = Google.useAuthRequest({
+    iosClientId: googleIosClientId,
+    androidClientId: googleAndroidClientId,
+    webClientId: googleWebClientId,
+    ...(Platform.OS === 'web' && googleWebRedirectUri ? { redirectUri: googleWebRedirectUri } : {}),
+    ...(Platform.OS !== 'web' ? { redirectUri: makeRedirectUri({ native: googleNativeRedirectUri }) } : {}),
+    shouldAutoExchangeCode: false,
+    scopes: ['openid', 'profile', 'email'],
+    selectAccount: true,
+  });
 
   useEffect(() => () => {
     void Speech.stop();
+  }, []);
+
+  useEffect(() => {
+    void AppleAuthentication.isAvailableAsync().then(setAppleAvailable);
   }, []);
 
   useEffect(() => {
@@ -270,6 +321,62 @@ export default function MenuScanner() {
   }, []);
 
   useEffect(() => {
+    if (!googleResponse) return;
+    if (googleResponse.type === 'error') {
+      setAuthError(googleResponse.error?.message ?? googleResponse.params.error_description ?? googleResponse.params.error ?? 'Google sign-in was not completed.');
+      setGoogleBusy(false);
+      return;
+    }
+    if (googleResponse.type !== 'success') {
+      setGoogleBusy(false);
+      return;
+    }
+    const completeGoogleSignIn = async () => {
+      let authentication = googleResponse.authentication;
+      if (!authentication && googleResponse.params.code && googleRequest) {
+        authentication = await new AccessTokenRequest({
+          clientId: googleNativeClientId,
+          code: googleResponse.params.code,
+          redirectUri: googleNativeRedirectUri,
+          extraParams: { code_verifier: googleRequest.codeVerifier ?? '' },
+        }).performAsync(Google.discovery);
+      }
+      return authentication?.accessToken ?? googleResponse.params.access_token;
+    };
+
+    setGoogleBusy(true);
+    void completeGoogleSignIn().then((accessToken) => {
+      if (!accessToken) {
+        setAuthError('Google did not return an access token.');
+        setGoogleBusy(false);
+        return;
+      }
+      return api.googleLogin(accessToken).then(async (result) => {
+        if (!result.token) {
+          setAuthError(localiseAuthError(result.error ?? 'Sign-in failed.', authLabels));
+          setGoogleBusy(false);
+          return;
+        }
+        await saveAuthToken(result.token);
+        api.setAuthToken(result.token);
+        const nextProfile = result.profile ?? (await api.getProfile()).profile;
+        if (nextProfile) {
+          setProfile(nextProfile);
+          setPreferences(nextProfile.foodPreferences);
+          setPreferenceInput(nextProfile.foodPreferences.map((preference) => preference.label).join(', '));
+        } else {
+          api.setAuthToken(null);
+          setAuthError(authLabels.authFailed);
+        }
+        setGoogleBusy(false);
+      });
+    }).catch((error) => {
+      setAuthError(`Google token exchange failed: ${error instanceof Error ? error.message : 'Unknown error.'}`);
+      setGoogleBusy(false);
+    });
+  }, [googleRequest, googleResponse, authLabels]);
+
+  useEffect(() => {
     const option = languageOptions.find((candidate) => candidate.code === language);
     if (option?.translationSource !== 'download') {
       setDownloadedText({});
@@ -342,22 +449,76 @@ export default function MenuScanner() {
   };
 
   const mockSignIn = async () => {
+    try {
+      setAuthError('');
+      const result = await api.mockLogin(mockUserName);
+      if (!result.token) {
+        setAuthError(localiseAuthError(result.error ?? 'Mock login failed.', authLabels));
+        return;
+      }
+      await saveAuthToken(result.token);
+      api.setAuthToken(result.token);
+      const profileResult = result.profile ? result : await api.getProfile();
+      if (profileResult.profile) {
+        setProfile(profileResult.profile);
+        setPreferences(profileResult.profile.foodPreferences);
+        setPreferenceInput(profileResult.profile.foodPreferences.map((preference) => preference.label).join(', '));
+      } else {
+        api.setAuthToken(null);
+        setAuthError(localiseAuthError(profileResult.error ?? 'Mock login did not return a profile.', authLabels));
+      }
+    } catch (error) {
+      setAuthError(`Mock login failed: ${error instanceof Error ? error.message : 'Unknown error.'}`);
+    }
+  };
+
+  const signInWithGoogle = async () => {
     setAuthError('');
-    const result = await api.mockLogin(mockUserName);
-    if (!result.token) {
-      setAuthError(localiseAuthError(result.error ?? 'Mock login failed.', authLabels));
+    if (!googleRequest) {
+      setAuthError('Google sign-in is not configured for this build.');
       return;
     }
-    await saveAuthToken(result.token);
-    api.setAuthToken(result.token);
-    const profileResult = result.profile ? result : await api.getProfile();
-    if (profileResult.profile) {
-      setProfile(profileResult.profile);
-      setPreferences(profileResult.profile.foodPreferences);
-      setPreferenceInput(profileResult.profile.foodPreferences.map((preference) => preference.label).join(', '));
-    } else {
-      api.setAuthToken(null);
-      setAuthError(localiseAuthError(profileResult.error ?? 'Mock login did not return a profile.', authLabels));
+    await promptGoogle();
+  };
+
+  const signInWithApple = async () => {
+    setAuthError('');
+    if (!appleAvailable) {
+      setAuthError('Apple sign-in is only available on a supported iOS device.');
+      return;
+    }
+    setAppleBusy(true);
+    try {
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [AppleAuthentication.AppleAuthenticationScope.FULL_NAME, AppleAuthentication.AppleAuthenticationScope.EMAIL],
+      });
+      if (!credential.identityToken) {
+        setAuthError('Apple did not return an identity token.');
+        return;
+      }
+      const name = [credential.fullName?.givenName, credential.fullName?.familyName].filter(Boolean).join(' ').trim();
+      const result = await api.appleLogin(credential.identityToken, name || undefined);
+      if (!result.token) {
+        setAuthError(localiseAuthError(result.error ?? 'Sign-in failed.', authLabels));
+        return;
+      }
+      await saveAuthToken(result.token);
+      api.setAuthToken(result.token);
+      const nextProfile = result.profile ?? (await api.getProfile()).profile;
+      if (!nextProfile) {
+        api.setAuthToken(null);
+        setAuthError(authLabels.authFailed);
+        return;
+      }
+      setProfile(nextProfile);
+      setPreferences(nextProfile.foodPreferences);
+      setPreferenceInput(nextProfile.foodPreferences.map((preference) => preference.label).join(', '));
+    } catch (error) {
+      if ((error as { code?: string }).code !== 'ERR_REQUEST_CANCELED') {
+        setAuthError(localiseAuthError(error instanceof Error ? error.message : 'Sign-in failed.', authLabels));
+      }
+    } finally {
+      setAppleBusy(false);
     }
   };
 
@@ -534,6 +695,25 @@ export default function MenuScanner() {
     }
   };
 
+  const saveDisplayName = async () => {
+    const displayName = displayNameInput.trim();
+    if (displayName.length < 2 || displayName.length > 80) {
+      Alert.alert('Display name', authLabels.nameLength);
+      return;
+    }
+    if (!profile) return;
+    setAccountBusy(true);
+    const result = await api.saveProfile(displayName, preferences);
+    setAccountBusy(false);
+    if (result.profile) {
+      setProfile(result.profile);
+      setDisplayNameInput(result.profile.displayName);
+      setDisplayNameEditing(false);
+    } else {
+      Alert.alert('Display name', result.error ?? 'Could not save your display name.');
+    }
+  };
+
   const copyLink = async () => {
     if (!menuUrl) return;
     await Clipboard.setStringAsync(menuUrl);
@@ -544,24 +724,34 @@ export default function MenuScanner() {
     if (menuUrl) await Linking.openURL(`https://wa.me/?text=${encodeURIComponent(`View this menu: ${menuUrl}`)}`);
   };
 
+  const openLegalPage = async (path: '/privacy' | '/terms') => {
+    await Linking.openURL(`${publicSiteUrl}${path}?lang=${encodeURIComponent(language)}`);
+  };
+
   if (authLoading) return <CenteredState text="Loading Roamenu..." />;
   if ((!api.getAuthToken() || !profile) && items.length === 0) {
     return (
       <SafeAreaView style={styles.container}>
         <StatusBar style="dark" />
-        <View style={styles.authCard}>
-          <RoamenuLogo />
-          <Text style={styles.title}>{text.authTitle}</Text>
-          <Text style={styles.subtitle}>{text.authSubtitle}</Text>
-          {passwordAuthMode === 'register' ? <TextInput style={styles.authInput} placeholder={authLabels.displayName} placeholderTextColor="#94A3B8" autoComplete="name" value={authDisplayName} onChangeText={setAuthDisplayName} /> : null}
-          <TextInput style={styles.authInput} placeholder={authLabels.email} placeholderTextColor="#94A3B8" autoComplete="email" keyboardType="email-address" autoCapitalize="none" value={authEmail} onChangeText={setAuthEmail} />
-          <TextInput style={styles.authInput} placeholder={authLabels.password} placeholderTextColor="#94A3B8" autoComplete={passwordAuthMode === 'register' ? 'new-password' : 'password'} secureTextEntry value={authPassword} onChangeText={setAuthPassword} />
-          {passwordAuthMode === 'register' ? <><TextInput style={styles.authInput} placeholder={authLabels.confirmPassword} placeholderTextColor="#94A3B8" autoComplete="new-password" secureTextEntry value={authPasswordConfirmation} onChangeText={setAuthPasswordConfirmation} /><Text style={styles.authHint}>{authLabels.useAtLeast}</Text></> : null}
-          <TouchableOpacity style={styles.primaryButton} onPress={() => void submitPasswordAuth()} disabled={passwordAuthBusy}><Text style={styles.primaryButtonText}>{passwordAuthBusy ? 'Please wait...' : passwordAuthMode === 'register' ? authLabels.createAccount : authLabels.signIn}</Text></TouchableOpacity>
-          <TouchableOpacity onPress={() => { setPasswordAuthMode(passwordAuthMode === 'signIn' ? 'register' : 'signIn'); setAuthError(''); }}><Text style={styles.link}>{passwordAuthMode === 'signIn' ? authLabels.switchToRegister : authLabels.switchToSignIn}</Text></TouchableOpacity>
-          {authError ? <Text style={styles.error}>{authError}</Text> : null}
-          {mockAuthEnabled ? <TouchableOpacity style={styles.secondaryButton} onPress={() => void mockSignIn()}><Text style={styles.secondaryButtonText}>{text.localAuth}</Text></TouchableOpacity> : null}
-        </View>
+        <KeyboardAvoidingView style={styles.authKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+          <ScrollView contentContainerStyle={styles.authContent} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
+            <View style={styles.authCard}>
+              <RoamenuLogo />
+              <Text style={styles.title}>{text.authTitle}</Text>
+              <Text style={styles.subtitle}>{text.authSubtitle}</Text>
+              {passwordAuthMode === 'register' ? <TextInput style={styles.authInput} placeholder={authLabels.displayName} placeholderTextColor="#94A3B8" autoComplete="name" value={authDisplayName} onChangeText={setAuthDisplayName} /> : null}
+              <TextInput style={styles.authInput} placeholder={authLabels.email} placeholderTextColor="#94A3B8" autoComplete="email" keyboardType="email-address" autoCapitalize="none" value={authEmail} onChangeText={setAuthEmail} />
+              <TextInput style={styles.authInput} placeholder={authLabels.password} placeholderTextColor="#94A3B8" autoComplete={passwordAuthMode === 'register' ? 'new-password' : 'password'} secureTextEntry value={authPassword} onChangeText={setAuthPassword} />
+              {passwordAuthMode === 'register' ? <><TextInput style={styles.authInput} placeholder={authLabels.confirmPassword} placeholderTextColor="#94A3B8" autoComplete="new-password" secureTextEntry value={authPasswordConfirmation} onChangeText={setAuthPasswordConfirmation} /><Text style={styles.authHint}>{authLabels.useAtLeast}</Text></> : null}
+              <TouchableOpacity style={styles.primaryButton} onPress={() => void submitPasswordAuth()} disabled={passwordAuthBusy}><Text style={styles.primaryButtonText}>{passwordAuthBusy ? 'Please wait...' : passwordAuthMode === 'register' ? authLabels.createAccount : authLabels.signIn}</Text></TouchableOpacity>
+              <TouchableOpacity onPress={() => { setPasswordAuthMode(passwordAuthMode === 'signIn' ? 'register' : 'signIn'); setAuthError(''); }}><Text style={styles.link}>{passwordAuthMode === 'signIn' ? authLabels.switchToRegister : authLabels.switchToSignIn}</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.secondaryButton} onPress={() => void signInWithGoogle()} disabled={googleBusy}><Text style={styles.secondaryButtonText}>{googleBusy ? 'Please wait...' : text.continueGoogle}</Text></TouchableOpacity>
+              {appleAvailable ? <AppleAuthentication.AppleAuthenticationButton buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN} buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK} cornerRadius={8} style={styles.appleButton} onPress={() => void signInWithApple()} /> : null}
+              {authError ? <Text style={styles.error}>{authError}</Text> : null}
+              {mockAuthEnabled ? <TouchableOpacity style={styles.secondaryButton} onPress={() => void mockSignIn()}><Text style={styles.secondaryButtonText}>{text.localAuth}</Text></TouchableOpacity> : null}
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
       </SafeAreaView>
     );
   }
@@ -601,7 +791,10 @@ export default function MenuScanner() {
         <SafeAreaView style={styles.container}>
           <View style={styles.accountHeader}><Text style={styles.title}>{text.account}</Text><TouchableOpacity onPress={() => setAccountVisible(false)}><Text style={styles.link}>{text.close}</Text></TouchableOpacity></View>
           <ScrollView contentContainerStyle={styles.accountContent}>
-            <Text style={styles.cardTitle}>{profile?.displayName ?? 'Roamenu'}</Text>
+            <View style={styles.displayNameRow}>
+              {displayNameEditing ? <TextInput autoFocus value={displayNameInput} onChangeText={setDisplayNameInput} style={[styles.input, styles.displayNameInput]} maxLength={80} returnKeyType="done" onSubmitEditing={() => void saveDisplayName()} /> : <Text style={styles.cardTitle}>{profile?.displayName ?? 'Roamenu'}</Text>}
+              {displayNameEditing ? <TouchableOpacity onPress={() => void saveDisplayName()} disabled={accountBusy} accessibilityRole="button" accessibilityLabel="Save display name"><Text style={styles.link}>{accountBusy ? 'Saving...' : 'Save'}</Text></TouchableOpacity> : <TouchableOpacity onPress={() => { setDisplayNameInput(profile?.displayName ?? ''); setDisplayNameEditing(true); }} accessibilityRole="button" accessibilityLabel="Edit display name"><PencilIcon /></TouchableOpacity>}
+            </View>
             <View style={styles.accountSection}>
               <Text style={styles.cardTitle}>{text.preferences}</Text>
               <Text style={styles.cardHint}>{text.preferenceHint}</Text>
@@ -613,6 +806,11 @@ export default function MenuScanner() {
               <Text style={styles.cardTitle}>{text.language}</Text>
               <Text style={styles.cardHint}>{text.languageHint}</Text>
               {languageOptions.map((option) => <TouchableOpacity key={option.code} style={[styles.languageRow, option.code === language && styles.languageRowSelected]} onPress={() => void chooseLanguage(option.code)}><Text style={styles.languageFlag}>{option.flag}</Text><Text style={styles.languageLabel}>{option.label}</Text>{option.code === language ? <Text style={styles.link}>✓</Text> : null}</TouchableOpacity>)}
+            </View>
+            <View style={styles.accountSection}>
+              <Text style={styles.cardTitle}>{legalText.sectionTitle}</Text>
+              <TouchableOpacity onPress={() => void openLegalPage('/privacy')}><Text style={styles.link}>{legalText.privacyPolicy}</Text></TouchableOpacity>
+              <TouchableOpacity onPress={() => void openLegalPage('/terms')}><Text style={styles.link}>{legalText.termsAndConditions}</Text></TouchableOpacity>
             </View>
             <TouchableOpacity style={styles.logoutButton} disabled={accountBusy} onPress={() => void logout()}><Text style={styles.logoutText}>{accountBusy ? 'Working...' : text.logOut}</Text></TouchableOpacity>
             <TouchableOpacity style={styles.deleteButton} disabled={accountBusy} onPress={deleteAccount}><Text style={styles.deleteText}>{text.deleteAccount}</Text></TouchableOpacity>
@@ -638,6 +836,15 @@ function AccountIcon() {
   );
 }
 
+function PencilIcon() {
+  return (
+    <Svg width={22} height={22} viewBox="0 0 24 24" fill="none" accessibilityLabel="Edit">
+      <Path d="m4 16.5-.75 3.25L6.5 19 17.75 7.75l-3.25-3.25L3.25 15.75" stroke="#007C83" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="m13.5 5.5 3.25 3.25M4 19.75l3.25-.75" stroke="#F2B84B" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
 function RoamenuLogo({ compact = false }: { compact?: boolean }) {
   return (
     <View style={[styles.logoRow, compact && styles.compactLogoRow]} accessible accessibilityLabel="Roamenu">
@@ -655,10 +862,12 @@ function RoamenuLogo({ compact = false }: { compact?: boolean }) {
 }
 
 const styles = StyleSheet.create({
-  container: { backgroundColor: '#F7F8F4', flex: 1 },
+  container: { backgroundColor: '#F7F8F4', flex: 1, paddingTop: Platform.OS === 'android' ? NativeStatusBar.currentHeight ?? 0 : 0 },
   content: { gap: 16, padding: 22, paddingBottom: 44 },
   centered: { alignItems: 'center', flex: 1, gap: 12, justifyContent: 'center' },
-  authCard: { flex: 1, gap: 16, justifyContent: 'center', padding: 24 },
+  authKeyboard: { flex: 1 },
+  authContent: { flexGrow: 1, justifyContent: 'center', padding: 24, paddingBottom: 44 },
+  authCard: { gap: 16 },
   kicker: { color: '#F2B84B', fontSize: 12, fontWeight: '800', letterSpacing: 2 },
   logoRow: { alignItems: 'center', flexDirection: 'row', gap: 10 },
   compactLogoRow: { gap: 7 },
@@ -689,9 +898,12 @@ const styles = StyleSheet.create({
   backButtonText: { color: '#102A2E', fontSize: 32, fontWeight: '300', lineHeight: 34 },
   secondaryButton: { alignItems: 'center', borderColor: '#CBD5E1', borderRadius: 12, borderWidth: 1, minHeight: 52, justifyContent: 'center' },
   secondaryButtonText: { color: '#102A2E', fontSize: 16, fontWeight: '700' },
+  appleButton: { height: 48, width: '100%' },
   error: { color: '#991B1B', fontSize: 14 },
   preferenceCard: { backgroundColor: '#FFFFFF', borderColor: '#E2E8EC', borderRadius: 14, borderWidth: 1, gap: 10, padding: 16 },
   cardTitle: { color: '#102A2E', fontSize: 18, fontWeight: '800' },
+  displayNameInput: { flex: 1, minHeight: 44, paddingVertical: 8 },
+  displayNameRow: { alignItems: 'center', flexDirection: 'row', gap: 12, justifyContent: 'space-between' },
   cardHint: { color: '#5A6E71', fontSize: 13, lineHeight: 19 },
   input: { borderColor: '#E2E8EC', borderRadius: 8, borderWidth: 1, color: '#102A2E', minHeight: 64, padding: 12, textAlignVertical: 'top' },
   preferenceRow: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },

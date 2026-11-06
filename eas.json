@@ -1,0 +1,39 @@
+{
+  "cli": {
+    "version": ">= 24.7.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal"
+    },
+    "preview": {
+      "distribution": "internal",
+      "environment": "preview",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://roamenu.vercel.app",
+        "EXPO_PUBLIC_PUBLIC_SITE_URL": "https://roamenu.vercel.app",
+        "EXPO_PUBLIC_MOCK_AUTH": "0",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "1023228353106-sria3devqhvji34f9lfl0l763to43rua.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "1023228353106-0fdhk27danbq0b324a7kn3ktk1585n2u.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "1023228353106-q0d9nc35g4q1rnel390fjqhoad233eg4.apps.googleusercontent.com"
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "environment": "production",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://roamenu.vercel.app",
+        "EXPO_PUBLIC_PUBLIC_SITE_URL": "https://roamenu.vercel.app",
+        "EXPO_PUBLIC_MOCK_AUTH": "0",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "1023228353106-sria3devqhvji34f9lfl0l763to43rua.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "1023228353106-0fdhk27danbq0b324a7kn3ktk1585n2u.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "1023228353106-q0d9nc35g4q1rnel390fjqhoad233eg4.apps.googleusercontent.com"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

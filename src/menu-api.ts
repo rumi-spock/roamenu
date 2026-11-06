@@ -60,6 +60,34 @@ export class MenuApi {
     }
   }
 
+  async googleLogin(accessToken: string): Promise<{ token?: string; profile?: UserProfile; error?: string }> {
+    try {
+      const response = await fetch(`${this.baseUrl}/api/mobile-auth/google`, {
+        method: 'POST',
+        headers: { ...this.headers(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accessToken }),
+      });
+      const data = await readJson<{ token?: string; profile?: UserProfile; error?: string }>(response);
+      return response.ok && data?.token ? data : { error: data?.error ?? 'Unable to sign in with Google.' };
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : 'Network request failed.' };
+    }
+  }
+
+  async appleLogin(identityToken: string, displayName?: string): Promise<{ token?: string; profile?: UserProfile; error?: string }> {
+    try {
+      const response = await fetch(`${this.baseUrl}/api/mobile-auth/apple`, {
+        method: 'POST',
+        headers: { ...this.headers(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identityToken, displayName }),
+      });
+      const data = await readJson<{ token?: string; profile?: UserProfile; error?: string }>(response);
+      return response.ok && data?.token ? data : { error: data?.error ?? 'Unable to sign in with Apple.' };
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : 'Network request failed.' };
+    }
+  }
+
   async passwordLogin(email: string, password: string): Promise<{ token?: string; profile?: UserProfile | null; error?: string }> {
     try {
       const response = await fetch(`${this.baseUrl}/api/mobile-auth/password/login`, {
