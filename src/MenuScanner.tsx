@@ -8,7 +8,7 @@ import * as AppleAuthentication from 'expo-apple-authentication';
 import { AccessTokenRequest, makeRedirectUri } from 'expo-auth-session';
 import * as Google from 'expo-auth-session/providers/google';
 import QRCode from 'qrcode';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Modal, Platform, SafeAreaView, ScrollView, StatusBar as NativeStatusBar, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Circle, Path, Rect, Svg } from 'react-native-svg';
@@ -44,7 +44,7 @@ function getSpeechLocale(language: string): string {
 }
 
 const uiText = {
-  en: { intelligentScan: 'Intelligent menu scan', chooseConfidence: 'Choose with confidence.', description: 'Go beyond translation. Understand each dish, its ingredients, and whether it suits your preferences.', scanMenu: 'Scan the menu', scanHint: 'Translate, understand, and choose', recent: 'Return to recent menu', scannedItems: 'menu items scanned', yourMenu: 'Your menu', account: 'Account', close: 'Close', preferences: 'Food preferences', preferenceHint: 'Separate preferences with commas, such as nuts, dairy, shellfish.', language: 'Language', languageHint: 'Used for menu translation and scan results.', savePreferences: 'Save preferences', logOut: 'Log out', deleteAccount: 'Delete account', beforeScan: 'Before we scan', promptHint: 'Tell us about any food preferences or allergens so we can highlight matching dishes.', saveNextTime: 'Save for next time', cancel: 'Cancel', analysing: 'Analysing your menu', analysingHint: 'We are translating dishes, checking allergens, and organising the results.', authTitle: 'Scan a menu. Know what you are ordering.', authSubtitle: 'Sign in to scan menus with AI and save your food preferences.', continueGoogle: 'Continue with Google', continueApple: 'Continue with Apple', localAuth: 'Continue as local user', copyMenuLink: 'Copy menu link', shareOnWhatsApp: 'Share on WhatsApp', showQr: 'Show QR', allergens: 'Allergens:', saveForNextTime: 'Save for next time' },
+  en: { intelligentScan: 'Intelligent menu scan', chooseConfidence: 'Choose with confidence.', description: 'Go beyond translation. Understand each dish, its ingredients, and whether it suits your preferences.', scanMenu: 'Scan the menu', scanHint: 'Translate, understand, and choose', recent: 'Return to recent menu', scannedItems: 'menu items scanned', yourMenu: 'Your menu', viewList: 'List', viewImage: 'On image', selectedItems: 'Selected', selectItem: 'Select item', deselectItem: 'Remove item', imageLocationsUnavailable: 'Item locations were not returned for this scan.', account: 'Account', close: 'Close', preferences: 'Food preferences', preferenceHint: 'Separate preferences with commas, such as nuts, dairy, shellfish.', language: 'Language', languageHint: 'Used for menu translation and scan results.', savePreferences: 'Save preferences', logOut: 'Log out', deleteAccount: 'Delete account', beforeScan: 'Before we scan', promptHint: 'Tell us about any food preferences or allergens so we can highlight matching dishes.', saveNextTime: 'Save for next time', cancel: 'Cancel', analysing: 'Analysing your menu', analysingHint: 'We are translating dishes, checking allergens, and organising the results.', authTitle: 'Scan a menu. Know what you are ordering.', authSubtitle: 'Sign in to scan menus with AI and save your food preferences.', continueGoogle: 'Continue with Google', continueApple: 'Continue with Apple', localAuth: 'Continue as local user', copyMenuLink: 'Copy menu link', shareOnWhatsApp: 'Share on WhatsApp', showQr: 'Show QR', allergens: 'Allergens:', saveForNextTime: 'Save for next time' },
   es: { intelligentScan: 'Escaneo inteligente del menú', chooseConfidence: 'Elige con confianza.', description: 'Ve más allá de la traducción. Entiende cada plato, sus ingredientes y si se adapta a tus preferencias.', scanMenu: 'Escanear el menú', scanHint: 'Traduce, entiende y elige', recent: 'Volver al menú reciente', scannedItems: 'platos escaneados', yourMenu: 'Tu menú', account: 'Cuenta', close: 'Cerrar', preferences: 'Preferencias alimentarias', preferenceHint: 'Separa las preferencias con comas, como frutos secos, lácteos o marisco.', language: 'Idioma', languageHint: 'Se usa para traducir el menú y los resultados del escaneo.', savePreferences: 'Guardar preferencias', logOut: 'Cerrar sesión', deleteAccount: 'Eliminar cuenta', beforeScan: 'Antes de escanear', promptHint: 'Indica tus preferencias o alergias para destacar los platos relevantes.', saveNextTime: 'Guardar para la próxima vez', cancel: 'Cancelar', analysing: 'Analizando tu menú', analysingHint: 'Estamos traduciendo los platos, comprobando alérgenos y organizando los resultados.' },
   pt: { intelligentScan: 'Leitura inteligente do menu', chooseConfidence: 'Escolha com confiança.', description: 'Vá além da tradução. Compreenda cada prato, os seus ingredientes e se corresponde às suas preferências.', scanMenu: 'Ler o menu', scanHint: 'Traduza, compreenda e escolha', recent: 'Voltar ao menu recente', scannedItems: 'itens do menu lidos', yourMenu: 'O seu menu', account: 'Conta', close: 'Fechar', preferences: 'Preferências alimentares', preferenceHint: 'Separe as preferências por vírgulas, como frutos secos, laticínios ou marisco.', language: 'Idioma', languageHint: 'Usado para a tradução do menu e os resultados da leitura.', savePreferences: 'Guardar preferências', logOut: 'Terminar sessão', deleteAccount: 'Eliminar conta', beforeScan: 'Antes de ler', promptHint: 'Indique as suas preferências ou alergias para destacarmos os pratos relevantes.', saveNextTime: 'Guardar para a próxima vez', cancel: 'Cancelar', analysing: 'A analisar o seu menu', analysingHint: 'Estamos a traduzir os pratos, a verificar alergénios e a organizar os resultados.' },
   nl: { intelligentScan: 'Intelligente menuscanner', chooseConfidence: 'Kies met vertrouwen.', description: 'Ga verder dan vertalen. Begrijp elk gerecht, de ingrediënten en of het bij je voorkeuren past.', scanMenu: 'Menu scannen', scanHint: 'Vertaal, begrijp en kies', recent: 'Recent menu openen', scannedItems: 'menu-items gescand', yourMenu: 'Jouw menu', account: 'Account', close: 'Sluiten', preferences: 'Voedselvoorkeuren', preferenceHint: 'Scheid voorkeuren met komma’s, zoals noten, zuivel of schaaldieren.', language: 'Taal', languageHint: 'Gebruikt voor menuvertaling en scanresultaten.', savePreferences: 'Voorkeuren opslaan', logOut: 'Uitloggen', deleteAccount: 'Account verwijderen', beforeScan: 'Voor we scannen', promptHint: 'Geef je voorkeuren of allergieën op zodat we passende gerechten kunnen markeren.', saveNextTime: 'Bewaren voor de volgende keer', cancel: 'Annuleren', analysing: 'Je menu wordt geanalyseerd', analysingHint: 'We vertalen gerechten, controleren allergenen en ordenen de resultaten.' },
@@ -173,6 +173,8 @@ type SavedScan = {
   sections: string[];
   items: Omit<MenuItem, 'matchedPreferences'>[];
   shareId: string | null;
+  imageUri?: string;
+  imageAspectRatio?: number;
 };
 
 const api = new MenuApi(apiUrl);
@@ -201,8 +203,13 @@ export default function MenuScanner() {
   const [sections, setSections] = useState<string[]>([]);
   const [currency, setCurrency] = useState<string | null>(null);
   const [sourceLanguage, setSourceLanguage] = useState('en');
+  const [scanImageUri, setScanImageUri] = useState<string | null>(null);
+  const [scanImageAspectRatio, setScanImageAspectRatio] = useState(1);
+  const [imageZoom, setImageZoom] = useState(1);
+  const [resultView, setResultView] = useState<'list' | 'image'>('list');
   const [shareId, setShareId] = useState<string | null>(null);
   const [selectedSection, setSelectedSection] = useState<number | null>(null);
+  const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
   const [selectedAsset, setSelectedAsset] = useState<ImagePicker.ImagePickerAsset | null>(null);
   const [loading, setLoading] = useState(false);
   const [qrVisible, setQrVisible] = useState(false);
@@ -217,6 +224,7 @@ export default function MenuScanner() {
   const [googleBusy, setGoogleBusy] = useState(false);
   const [appleAvailable, setAppleAvailable] = useState(false);
   const [appleBusy, setAppleBusy] = useState(false);
+  const speechRequestId = useRef(0);
   const text = { ...uiText.en, ...uiText[language as UiLanguage], ...authUiText[language], ...extraUiText[language as UiLanguage], ...downloadedText };
   const authLabels = passwordAuthLabels[language];
   const legalText = legalUiText[language];
@@ -277,7 +285,9 @@ export default function MenuScanner() {
   }, [preferences]);
 
   const menuUrl = shareId ? `${publicSiteUrl}/menu/${shareId}` : null;
-  const visibleItems = selectedSection === null ? items : items.filter((item) => item.section === selectedSection);
+  const selectedItems = items.filter((item) => selectedItemIds.includes(item.id));
+  const visibleItems = selectedSection === -1 ? [] : selectedSection === null ? items : items.filter((item) => item.section === selectedSection);
+  const canViewItemsOnImage = Boolean(scanImageUri && items.some((item) => item.bounds));
   const qrCodeMatrix = useMemo(() => {
     if (!menuUrl) return null;
     try {
@@ -530,7 +540,7 @@ export default function MenuScanner() {
     return rendered.saveAsync({ compress: 0.82, format: ImageManipulator.SaveFormat.JPEG });
   };
 
-  const saveScanResult = async (result: MenuScanResult) => {
+  const saveScanResult = async (result: MenuScanResult, imageUri?: string, imageAspectRatio?: number) => {
     if (result.error) {
       Alert.alert('Scan failed', result.error);
       return;
@@ -541,6 +551,7 @@ export default function MenuScanner() {
     setCurrency(result.currency);
     setSourceLanguage(result.sourceLanguage || 'en');
     setSelectedSection(null);
+    setSelectedItemIds([]);
     if (matchedItems.length > 0) {
       const shareItems = matchedItems.map((item: MenuItem) => {
         const { matchedPreferences: _matched, ...rest } = item;
@@ -548,7 +559,7 @@ export default function MenuScanner() {
       });
       const share = await api.createMenuShare({ sourceLanguage: result.sourceLanguage, currency: result.currency, sections: result.sections, items: shareItems });
       setShareId(share.shareId ?? null);
-      const saved: SavedScan = { sourceLanguage: result.sourceLanguage, currency: result.currency, sections: result.sections, items: shareItems, shareId: share.shareId ?? null };
+      const saved: SavedScan = { sourceLanguage: result.sourceLanguage, currency: result.currency, sections: result.sections, items: shareItems, shareId: share.shareId ?? null, imageUri, imageAspectRatio };
       setRecentScan(saved);
       await AsyncStorage.setItem(activeScanKey, JSON.stringify(saved));
     }
@@ -558,9 +569,13 @@ export default function MenuScanner() {
     setLoading(true);
     try {
       const image = await prepareImage(asset);
+      setScanImageUri(image.uri);
+      setScanImageAspectRatio(image.width / image.height);
+      setImageZoom(1);
+      setResultView('list');
       const scanLanguage = scanLanguages.has(language) ? language : 'en';
       const result = await api.scanMenu(image.uri, scanLanguage);
-      await saveScanResult(result);
+      await saveScanResult(result, image.uri, image.width / image.height);
     } catch (error) {
       Alert.alert('Scan failed', error instanceof Error ? error.message : 'Please try again.');
     } finally {
@@ -640,10 +655,15 @@ export default function MenuScanner() {
   };
 
   const speakItem = async (name: string) => {
+    const requestId = ++speechRequestId.current;
     const speechLanguage = getSpeechLocale(sourceLanguage);
     try {
       await Speech.stop();
+      if (requestId !== speechRequestId.current) return;
+      if (Platform.OS === 'android') await new Promise<void>((resolve) => setTimeout(resolve, 100));
+      if (requestId !== speechRequestId.current) return;
       if (Platform.OS === 'web' && typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
         const utterance = new SpeechSynthesisUtterance(name);
         utterance.lang = speechLanguage;
         utterance.onerror = () => Alert.alert('Speech unavailable', 'This browser does not have a speech voice available.');
@@ -652,13 +672,17 @@ export default function MenuScanner() {
       }
       Speech.speak(name, {
         language: speechLanguage,
-        useApplicationAudioSession: false,
+        useApplicationAudioSession: true,
         volume: 1,
         onError: () => Alert.alert('Speech unavailable', 'Text-to-speech is not available on this device.'),
       });
     } catch {
       Alert.alert('Speech unavailable', 'Text-to-speech is not available on this device.');
     }
+  };
+
+  const toggleItemSelection = (itemId: string) => {
+    setSelectedItemIds((current) => current.includes(itemId) ? current.filter((id) => id !== itemId) : [...current, itemId]);
   };
 
   const chooseImage = () => Alert.alert('Scan a menu', 'Choose an image source', [
@@ -672,6 +696,11 @@ export default function MenuScanner() {
     setShareId(null);
     setSections([]);
     setSelectedSection(null);
+    setSelectedItemIds([]);
+    setScanImageUri(null);
+    setScanImageAspectRatio(1);
+    setImageZoom(1);
+    setResultView('list');
   };
 
   const restoreRecentScan = () => {
@@ -682,6 +711,10 @@ export default function MenuScanner() {
     setSourceLanguage(recentScan.sourceLanguage || 'en');
     setShareId(recentScan.shareId);
     setSelectedSection(null);
+    setSelectedItemIds([]);
+    setScanImageUri(recentScan.imageUri ?? null);
+    setScanImageAspectRatio(recentScan.imageAspectRatio ?? 1);
+    setResultView('list');
   };
 
   const savePreferenceChanges = async () => {
@@ -769,8 +802,10 @@ export default function MenuScanner() {
         </> : <>
           <Text style={styles.title}>{text.yourMenu}</Text>
           {menuUrl ? <View style={styles.shareRow}><TouchableOpacity style={styles.shareButton} onPress={() => void copyLink()}><Text style={styles.shareText}>{text.copyMenuLink}</Text></TouchableOpacity><TouchableOpacity style={styles.shareButton} onPress={() => void shareLink()}><Text style={styles.shareText}>{text.shareOnWhatsApp}</Text></TouchableOpacity><TouchableOpacity style={styles.shareButton} onPress={() => setQrVisible(true)}><Text style={styles.shareText}>{text.showQr}</Text></TouchableOpacity></View> : null}
-          {sections.length > 0 ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabs}><TouchableOpacity style={[styles.tab, selectedSection === null && styles.selectedTab]} onPress={() => setSelectedSection(null)}><Text>All</Text></TouchableOpacity>{sections.map((section, index) => <TouchableOpacity key={`${section}-${index}`} style={[styles.tab, selectedSection === index && styles.selectedTab]} onPress={() => setSelectedSection(index)}><Text>{translateMenuSection(section, sourceLanguage)}</Text></TouchableOpacity>)}</ScrollView> : null}
-          {visibleItems.map((item) => <View key={item.id} style={[styles.itemCard, item.matchedPreferences.length > 0 && styles.warningCard]}><View style={styles.itemHeader}><View style={styles.itemNames}><Text style={styles.itemName}>{item.number ? `${item.number}. ` : ''}{item.translatedName}</Text><View style={styles.originalRow}><TouchableOpacity style={styles.speakerButton} onPress={() => void speakItem(item.originalName)} accessibilityRole="button" accessibilityLabel={`Speak ${item.originalName}`}><Text style={styles.speakerIcon}>🔊</Text></TouchableOpacity><Text style={styles.originalName}>{item.originalName}</Text></View></View>{item.priceInPence !== null && currency ? <Text style={styles.price}>{formatMenuPrice(item.priceInPence, currency, sourceLanguage)}</Text> : null}</View>{item.pronunciation ? <Text style={styles.detail}>Say it: {item.pronunciation}</Text> : null}<Text style={styles.detail}>{item.description}</Text>{item.allergens.length > 0 ? <Text style={styles.detail}>{text.allergens} {item.allergens.join(', ')}</Text> : null}{item.matchedPreferences.length > 0 ? <Text style={styles.warning}>Matches: {item.matchedPreferences.join(', ')}</Text> : null}</View>)}
+          {canViewItemsOnImage ? <View style={styles.viewModeRow}><TouchableOpacity style={[styles.viewModeButton, resultView === 'list' && styles.viewModeButtonSelected]} onPress={() => setResultView('list')}><Text style={styles.viewModeText}>{text.viewList}</Text></TouchableOpacity><TouchableOpacity style={[styles.viewModeButton, resultView === 'image' && styles.viewModeButtonSelected]} onPress={() => setResultView('image')}><Text style={styles.viewModeText}>{text.viewImage}</Text></TouchableOpacity></View> : null}
+          {sections.length > 0 || selectedItemIds.length > 0 ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabs}><TouchableOpacity style={[styles.tab, selectedSection === -1 && styles.selectedTab]} onPress={() => { setSelectedSection(-1); setResultView('list'); }}><Text>{text.selectedItems} ({selectedItemIds.length})</Text></TouchableOpacity><TouchableOpacity style={[styles.tab, selectedSection === null && styles.selectedTab]} onPress={() => { setSelectedSection(null); setResultView('list'); }}><Text>All</Text></TouchableOpacity>{sections.map((section, index) => <TouchableOpacity key={`${section}-${index}`} style={[styles.tab, selectedSection === index && styles.selectedTab]} onPress={() => { setSelectedSection(index); setResultView('list'); }}><Text>{translateMenuSection(section, sourceLanguage)}</Text></TouchableOpacity>)}</ScrollView> : null}
+          {selectedSection === -1 ? <View style={styles.selectedItemsPanel}>{selectedItems.map((item) => <View key={item.id} style={styles.selectedItemCard}><View style={styles.selectedOriginalRow}><Text style={styles.selectedOriginalName}>{item.originalName}</Text><TouchableOpacity style={styles.speakerButton} onPress={() => void speakItem(item.originalName)} accessibilityRole="button" accessibilityLabel={`Speak ${item.originalName}`}><Text style={styles.speakerIcon}>🔊</Text></TouchableOpacity></View><Text style={styles.selectedTranslatedName}>{item.translatedName}</Text>{item.pronunciation ? <Text style={styles.selectedPronunciation}>Say it: {item.pronunciation}</Text> : null}</View>)}</View> : null}
+          {resultView === 'image' && scanImageUri ? <View style={[styles.menuImageFrame, { aspectRatio: scanImageAspectRatio }]}><View style={[styles.menuImageCanvas, { transform: [{ scale: imageZoom }] }]}><Image source={{ uri: scanImageUri }} style={styles.menuImage} resizeMode="contain" />{items.some((item) => item.bounds) ? visibleItems.map((item) => item.bounds ? <View key={item.id} style={[styles.menuImageLabel, { left: `${item.bounds.x * 100}%`, top: `${item.bounds.y * 100}%`, width: `${item.bounds.width * 100}%`, height: `${item.bounds.height * 100}%` }]}><Text style={styles.menuImageLabelText}>{item.translatedName}</Text></View> : null) : <Text style={styles.imageNotice}>{text.imageLocationsUnavailable}</Text>}</View><View style={styles.imageZoomControls}><TouchableOpacity style={styles.imageZoomButton} onPress={() => setImageZoom((zoom) => Math.max(1, zoom - 0.5))} accessibilityRole="button" accessibilityLabel="Zoom out"><Text style={styles.imageZoomButtonText}>−</Text></TouchableOpacity><TouchableOpacity style={styles.imageZoomReset} onPress={() => setImageZoom(1)} accessibilityRole="button" accessibilityLabel="Reset image zoom"><Text style={styles.imageZoomResetText}>{Math.round(imageZoom * 100)}%</Text></TouchableOpacity><TouchableOpacity style={styles.imageZoomButton} onPress={() => setImageZoom((zoom) => Math.min(3, zoom + 0.5))} accessibilityRole="button" accessibilityLabel="Zoom in"><Text style={styles.imageZoomButtonText}>+</Text></TouchableOpacity></View></View> : <>{visibleItems.map((item) => <View key={item.id} style={[styles.itemCard, item.matchedPreferences.length > 0 && styles.warningCard]}><TouchableOpacity style={[styles.itemSelectButton, selectedItemIds.includes(item.id) && styles.itemSelectButtonSelected]} onPress={() => toggleItemSelection(item.id)} accessibilityRole="checkbox" accessibilityState={{ checked: selectedItemIds.includes(item.id) }} accessibilityLabel={selectedItemIds.includes(item.id) ? text.deselectItem : text.selectItem}><Text style={[styles.itemSelectText, selectedItemIds.includes(item.id) && styles.itemSelectTextSelected]}>{selectedItemIds.includes(item.id) ? '✓' : '+'}</Text></TouchableOpacity><View style={styles.itemHeader}><View style={styles.itemNames}><Text style={styles.itemName}>{item.number ? `${item.number}. ` : ''}{item.translatedName}</Text><View style={styles.originalRow}><TouchableOpacity style={styles.speakerButton} onPress={() => void speakItem(selectedSection === -1 ? item.translatedName : item.originalName)} accessibilityRole="button" accessibilityLabel={`Speak ${selectedSection === -1 ? item.translatedName : item.originalName}`}><Text style={styles.speakerIcon}>🔊</Text></TouchableOpacity><Text style={styles.originalName}>{item.originalName}</Text></View></View>{item.priceInPence !== null && currency ? <Text style={styles.price}>{formatMenuPrice(item.priceInPence, currency, sourceLanguage)}</Text> : null}</View>{item.pronunciation ? <Text style={styles.detail}>Say it: {item.pronunciation}</Text> : null}<Text style={styles.detail}>{item.description}</Text>{item.allergens.length > 0 ? <Text style={styles.detail}>{text.allergens} {item.allergens.join(', ')}</Text> : null}{item.matchedPreferences.length > 0 ? <Text style={styles.warning}>Matches: {item.matchedPreferences.join(', ')}</Text> : null}</View>)}</>}
         </>}
       </ScrollView>
       <Modal visible={loading} transparent animationType="fade" onRequestClose={() => undefined}><View style={styles.scanModalOverlay}><View style={styles.scanModalCard}><ActivityIndicator color="#007C83" size="large" /><Text style={styles.scanModalTitle}>{text.analysing}</Text><Text style={styles.scanModalText}>{text.analysingHint}</Text><View style={styles.scanProgressTrack}><View style={styles.scanProgressBar} /></View></View></View></Modal>
@@ -855,7 +890,6 @@ function RoamenuLogo({ compact = false }: { compact?: boolean }) {
       </Svg>
       <View style={styles.logoType}>
         <Text style={[styles.logoName, compact && styles.compactLogoName]}>ROAMENU</Text>
-        <Text style={[styles.logoByline, compact && styles.compactLogoByline]}>BY ROAMENU</Text>
       </View>
     </View>
   );
@@ -874,8 +908,6 @@ const styles = StyleSheet.create({
   logoType: { justifyContent: 'center' },
   logoName: { color: '#007C83', fontSize: 25, fontWeight: '900', letterSpacing: 1.4 },
   compactLogoName: { fontSize: 16, letterSpacing: 1 },
-  logoByline: { color: '#5A6E71', fontSize: 9, fontWeight: '800', letterSpacing: 1.5, marginTop: 1 },
-  compactLogoByline: { fontSize: 6, letterSpacing: 1 },
   scanHeading: { color: '#F2B84B', fontSize: 24, fontWeight: '800', lineHeight: 30 },
   title: { color: '#007C83', fontSize: 32, fontWeight: '800', lineHeight: 38 },
   subtitle: { color: '#5A6E71', fontSize: 16, lineHeight: 24 },
@@ -912,10 +944,35 @@ const styles = StyleSheet.create({
   shareRow: { flexDirection: 'row', gap: 8 },
   shareButton: { backgroundColor: '#E6F2F3', borderRadius: 10, flex: 1, padding: 12 },
   shareText: { color: '#005E63', fontSize: 13, fontWeight: '700', textAlign: 'center' },
+  viewModeRow: { alignSelf: 'center', backgroundColor: '#E6F2F3', borderRadius: 10, flexDirection: 'row', padding: 3 },
+  viewModeButton: { borderRadius: 8, minWidth: 84, paddingHorizontal: 14, paddingVertical: 9 },
+  viewModeButtonSelected: { backgroundColor: '#FFFFFF' },
+  viewModeText: { color: '#005E63', fontSize: 13, fontWeight: '700', textAlign: 'center' },
+  menuImageFrame: { backgroundColor: '#102A2E', overflow: 'hidden', position: 'relative', width: '100%' },
+  menuImageCanvas: { height: '100%', position: 'absolute', width: '100%' },
+  menuImage: { height: '100%', width: '100%' },
+  menuImageLabel: { backgroundColor: 'rgba(255, 244, 214, 0.88)', borderColor: '#007C83', borderRadius: 4, borderWidth: 1, justifyContent: 'center', minHeight: 22, overflow: 'visible', paddingHorizontal: 4, position: 'absolute' },
+  menuImageLabelText: { color: '#102A2E', fontSize: 11, fontWeight: '800' },
+  imageNotice: { backgroundColor: 'rgba(255, 244, 214, 0.94)', color: '#102A2E', fontSize: 14, fontWeight: '700', left: 16, padding: 12, position: 'absolute', right: 16, textAlign: 'center', top: '45%' },
+  imageZoomControls: { alignItems: 'center', backgroundColor: 'rgba(16, 42, 46, 0.88)', borderRadius: 8, bottom: 10, flexDirection: 'row', position: 'absolute', right: 10 },
+  imageZoomButton: { alignItems: 'center', height: 34, justifyContent: 'center', width: 36 },
+  imageZoomButtonText: { color: '#FFFFFF', fontSize: 22, fontWeight: '700' },
+  imageZoomReset: { alignItems: 'center', height: 34, justifyContent: 'center', minWidth: 48 },
+  imageZoomResetText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
   tabs: { gap: 8 },
   tab: { backgroundColor: '#FFFFFF', borderColor: '#E2E8EC', borderRadius: 18, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 9 },
   selectedTab: { backgroundColor: '#E6F2F3', borderColor: '#007C83' },
   itemCard: { backgroundColor: '#FFFFFF', borderColor: '#E2E8EC', borderRadius: 12, borderWidth: 1, gap: 8, padding: 16 },
+  itemSelectButton: { alignItems: 'center', alignSelf: 'flex-end', borderColor: '#007C83', borderRadius: 16, borderWidth: 1, height: 30, justifyContent: 'center', width: 30 },
+  itemSelectButtonSelected: { backgroundColor: '#007C83' },
+  itemSelectText: { color: '#007C83', fontSize: 18, fontWeight: '800' },
+  itemSelectTextSelected: { color: '#FFFFFF' },
+  selectedItemsPanel: { gap: 10 },
+  selectedItemCard: { backgroundColor: '#FFFFFF', borderColor: '#007C83', borderRadius: 12, borderWidth: 1, gap: 5, padding: 16 },
+  selectedOriginalRow: { alignItems: 'center', flexDirection: 'row', gap: 6 },
+  selectedOriginalName: { color: '#102A2E', flex: 1, fontSize: 20, fontWeight: '800' },
+  selectedTranslatedName: { color: '#5A6E71', fontSize: 16, fontWeight: '600' },
+  selectedPronunciation: { color: '#007C83', fontSize: 14, fontStyle: 'italic', fontWeight: '700' },
   warningCard: { backgroundColor: '#FFF5F3', borderColor: '#C83F3F', borderWidth: 2 },
   itemHeader: { alignItems: 'flex-start', flexDirection: 'row', justifyContent: 'space-between' },
   itemNames: { flex: 1, paddingRight: 12 },

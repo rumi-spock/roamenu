@@ -1,4 +1,5 @@
 export type MenuPreference = { id: string; label: string };
+export type MenuItemBounds = { x: number; y: number; width: number; height: number };
 
 export type MenuItem = {
   id: string;
@@ -10,6 +11,7 @@ export type MenuItem = {
   description: string;
   allergens: string[];
   section: number | null;
+  bounds: MenuItemBounds | null;
   matchedPreferences: string[];
 };
 
