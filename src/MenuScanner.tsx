@@ -16,6 +16,7 @@ import { languageOptions, type SharedLanguage } from '@roamenu/shared-utils/tran
 import { applyPreferenceMatches, formatMenuPrice, normalisePreferenceLabel, translateMenuSection, type MenuItem, type MenuPreference, type MenuScanResult } from './menu-domain';
 import { loadAuthToken, MenuApi, saveAuthToken, type UserProfile } from './menu-api';
 import { extractSharedMenuId } from './shared-menu-link';
+import { findOcrBounds, inspectMenuImage } from './services/mobile-ocr';
 
 const activeScanKey = 'roamenu.active-menu-scan';
 const languageKey = 'roamenu-language';
@@ -34,6 +35,7 @@ const googleNativeRedirectUri = googleNativeClientId
   ? `com.googleusercontent.apps.${googleNativeClientId.replace(/\.apps\.googleusercontent\.com$/, '')}:/oauthredirect`
   : 'roamenu:/oauthredirect';
 const scanLanguages = new Set(['en', 'es', 'pt', 'nl', 'uk', 'ro', 'lt', 'sv', 'fi', 'nb', 'da', 'ko']);
+const maxScanPages = 5;
 const speechLocales: Record<string, string> = {
   en: 'en-US', es: 'es-ES', pt: 'pt-PT', nl: 'nl-NL', uk: 'uk-UA', ro: 'ro-RO', lt: 'lt-LT', sv: 'sv-SE', fi: 'fi-FI', nb: 'nb-NO', da: 'da-DK',
   'zh-CN': 'zh-CN', ja: 'ja-JP', ko: 'ko-KR',
@@ -44,7 +46,7 @@ function getSpeechLocale(language: string): string {
 }
 
 const uiText = {
-  en: { intelligentScan: 'Intelligent menu scan', chooseConfidence: 'Choose with confidence.', description: 'Go beyond translation. Understand each dish, its ingredients, and whether it suits your preferences.', scanMenu: 'Scan the menu', scanHint: 'Translate, understand, and choose', recent: 'Return to recent menu', scannedItems: 'menu items scanned', yourMenu: 'Your menu', viewList: 'List', viewImage: 'On image', selectedItems: 'Selected', selectItem: 'Select item', deselectItem: 'Remove item', imageLocationsUnavailable: 'Item locations were not returned for this scan.', account: 'Account', close: 'Close', preferences: 'Food preferences', preferenceHint: 'Separate preferences with commas, such as nuts, dairy, shellfish.', language: 'Language', languageHint: 'Used for menu translation and scan results.', savePreferences: 'Save preferences', logOut: 'Log out', deleteAccount: 'Delete account', beforeScan: 'Before we scan', promptHint: 'Tell us about any food preferences or allergens so we can highlight matching dishes.', saveNextTime: 'Save for next time', cancel: 'Cancel', analysing: 'Analysing your menu', analysingHint: 'We are translating dishes, checking allergens, and organising the results.', authTitle: 'Scan a menu. Know what you are ordering.', authSubtitle: 'Sign in to scan menus with AI and save your food preferences.', continueGoogle: 'Continue with Google', continueApple: 'Continue with Apple', localAuth: 'Continue as local user', copyMenuLink: 'Copy menu link', shareOnWhatsApp: 'Share on WhatsApp', showQr: 'Show QR', allergens: 'Allergens:', saveForNextTime: 'Save for next time' },
+  en: { intelligentScan: 'Intelligent menu scan', chooseConfidence: 'Choose with confidence.', description: 'Go beyond translation. Understand each dish, its ingredients, and whether it suits your preferences.', scanMenu: 'Scan the menu', scanHint: 'Translate, understand, and choose', scanAnotherPage: 'Scan another page', recent: 'Return to recent menu', scannedItems: 'menu items scanned', yourMenu: 'Your menu', viewList: 'List', viewImage: 'On image', selectedItems: 'Selected', selectItem: 'Select item', deselectItem: 'Remove item', imageLocationsUnavailable: 'Item locations were not returned for this scan.', account: 'Account', close: 'Close', preferences: 'Food preferences', preferenceHint: 'Separate preferences with commas, such as nuts, dairy, shellfish.', language: 'Language', languageHint: 'Used for menu translation and scan results.', savePreferences: 'Save preferences', logOut: 'Log out', deleteAccount: 'Delete account', beforeScan: 'Before we scan', promptHint: 'Tell us about any food preferences or allergens so we can highlight matching dishes.', saveNextTime: 'Save for next time', cancel: 'Cancel', analysing: 'Analysing your menu', analysingHint: 'We are translating dishes, checking allergens, and organising the results.', authTitle: 'Scan a menu. Know what you are ordering.', authSubtitle: 'Sign in to scan menus with AI and save your food preferences.', continueGoogle: 'Continue with Google', continueApple: 'Continue with Apple', localAuth: 'Continue as local user', copyMenuLink: 'Copy menu link', shareOnWhatsApp: 'Share on WhatsApp', showQr: 'Show QR', allergens: 'Allergens:', saveForNextTime: 'Save for next time' },
   es: { intelligentScan: 'Escaneo inteligente del menú', chooseConfidence: 'Elige con confianza.', description: 'Ve más allá de la traducción. Entiende cada plato, sus ingredientes y si se adapta a tus preferencias.', scanMenu: 'Escanear el menú', scanHint: 'Traduce, entiende y elige', recent: 'Volver al menú reciente', scannedItems: 'platos escaneados', yourMenu: 'Tu menú', account: 'Cuenta', close: 'Cerrar', preferences: 'Preferencias alimentarias', preferenceHint: 'Separa las preferencias con comas, como frutos secos, lácteos o marisco.', language: 'Idioma', languageHint: 'Se usa para traducir el menú y los resultados del escaneo.', savePreferences: 'Guardar preferencias', logOut: 'Cerrar sesión', deleteAccount: 'Eliminar cuenta', beforeScan: 'Antes de escanear', promptHint: 'Indica tus preferencias o alergias para destacar los platos relevantes.', saveNextTime: 'Guardar para la próxima vez', cancel: 'Cancelar', analysing: 'Analizando tu menú', analysingHint: 'Estamos traduciendo los platos, comprobando alérgenos y organizando los resultados.' },
   pt: { intelligentScan: 'Leitura inteligente do menu', chooseConfidence: 'Escolha com confiança.', description: 'Vá além da tradução. Compreenda cada prato, os seus ingredientes e se corresponde às suas preferências.', scanMenu: 'Ler o menu', scanHint: 'Traduza, compreenda e escolha', recent: 'Voltar ao menu recente', scannedItems: 'itens do menu lidos', yourMenu: 'O seu menu', account: 'Conta', close: 'Fechar', preferences: 'Preferências alimentares', preferenceHint: 'Separe as preferências por vírgulas, como frutos secos, laticínios ou marisco.', language: 'Idioma', languageHint: 'Usado para a tradução do menu e os resultados da leitura.', savePreferences: 'Guardar preferências', logOut: 'Terminar sessão', deleteAccount: 'Eliminar conta', beforeScan: 'Antes de ler', promptHint: 'Indique as suas preferências ou alergias para destacarmos os pratos relevantes.', saveNextTime: 'Guardar para a próxima vez', cancel: 'Cancelar', analysing: 'A analisar o seu menu', analysingHint: 'Estamos a traduzir os pratos, a verificar alergénios e a organizar os resultados.' },
   nl: { intelligentScan: 'Intelligente menuscanner', chooseConfidence: 'Kies met vertrouwen.', description: 'Ga verder dan vertalen. Begrijp elk gerecht, de ingrediënten en of het bij je voorkeuren past.', scanMenu: 'Menu scannen', scanHint: 'Vertaal, begrijp en kies', recent: 'Recent menu openen', scannedItems: 'menu-items gescand', yourMenu: 'Jouw menu', account: 'Account', close: 'Sluiten', preferences: 'Voedselvoorkeuren', preferenceHint: 'Scheid voorkeuren met komma’s, zoals noten, zuivel of schaaldieren.', language: 'Taal', languageHint: 'Gebruikt voor menuvertaling en scanresultaten.', savePreferences: 'Voorkeuren opslaan', logOut: 'Uitloggen', deleteAccount: 'Account verwijderen', beforeScan: 'Voor we scannen', promptHint: 'Geef je voorkeuren of allergieën op zodat we passende gerechten kunnen markeren.', saveNextTime: 'Bewaren voor de volgende keer', cancel: 'Annuleren', analysing: 'Je menu wordt geanalyseerd', analysingHint: 'We vertalen gerechten, controleren allergenen en ordenen de resultaten.' },
@@ -175,7 +177,38 @@ type SavedScan = {
   shareId: string | null;
   imageUri?: string;
   imageAspectRatio?: number;
+  pageCount?: number;
 };
+
+function comparableMenuItem(value: string): string {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+}
+
+type OverlayLayout = { x: number; y: number; width: number; height: number };
+
+function getOverlayLayout(item: MenuItem, items: MenuItem[]): OverlayLayout | null {
+  if (!item.bounds) return null;
+  const { x, y, width, height } = item.bounds;
+  const otherBounds = items.flatMap((candidate) => candidate.id === item.id || !candidate.bounds ? [] : [candidate.bounds]);
+  const rightLimit = Math.min(1, ...otherBounds
+    .filter((candidate) => candidate.x > x && candidate.y < y + height && candidate.y + candidate.height > y)
+    .map((candidate) => candidate.x));
+  const bottomLimit = Math.min(1, ...otherBounds
+    .filter((candidate) => candidate.y > y && candidate.x < x + width && candidate.x + candidate.width > x)
+    .map((candidate) => candidate.y));
+  const textLength = item.translatedName.length;
+  const desiredWidth = Math.min(0.9, Math.max(width, 0.02 + Math.min(textLength, 48) * 0.018));
+  const desiredHeight = height;
+  const availableWidth = Math.max(width, rightLimit - x);
+  const availableHeight = Math.max(height, bottomLimit - y);
+  const layoutWidth = Math.min(desiredWidth, availableWidth, 1 - x);
+  const layoutHeight = Math.min(desiredHeight, availableHeight, 1 - y);
+  return { x, y, width: layoutWidth, height: layoutHeight };
+}
+
+function menuItemKey(item: MenuItem): string {
+  return [item.originalName, item.translatedName, item.priceInPence ?? ''].map((value) => comparableMenuItem(String(value))).join('|');
+}
 
 const api = new MenuApi(apiUrl);
 type StorageApi = {
@@ -205,6 +238,7 @@ export default function MenuScanner() {
   const [sourceLanguage, setSourceLanguage] = useState('en');
   const [scanImageUri, setScanImageUri] = useState<string | null>(null);
   const [scanImageAspectRatio, setScanImageAspectRatio] = useState(1);
+  const [scanPageCount, setScanPageCount] = useState(0);
   const [imageZoom, setImageZoom] = useState(1);
   const [resultView, setResultView] = useState<'list' | 'image'>('list');
   const [shareId, setShareId] = useState<string | null>(null);
@@ -287,7 +321,7 @@ export default function MenuScanner() {
   const menuUrl = shareId ? `${publicSiteUrl}/menu/${shareId}` : null;
   const selectedItems = items.filter((item) => selectedItemIds.includes(item.id));
   const visibleItems = selectedSection === -1 ? [] : selectedSection === null ? items : items.filter((item) => item.section === selectedSection);
-  const canViewItemsOnImage = Boolean(scanImageUri && items.some((item) => item.bounds));
+  const canViewItemsOnImage = Boolean(scanPageCount <= 1 && scanImageUri && items.some((item) => item.bounds));
   const qrCodeMatrix = useMemo(() => {
     if (!menuUrl) return null;
     try {
@@ -540,26 +574,46 @@ export default function MenuScanner() {
     return rendered.saveAsync({ compress: 0.82, format: ImageManipulator.SaveFormat.JPEG });
   };
 
-  const saveScanResult = async (result: MenuScanResult, imageUri?: string, imageAspectRatio?: number) => {
+  const saveScanResult = async (result: MenuScanResult, imageUri: string | undefined, imageAspectRatio: number | undefined, pageCount: number, isAdditionalPage: boolean) => {
     if (result.error) {
       Alert.alert('Scan failed', result.error);
       return;
     }
-    const matchedItems = applyPreferenceMatches(result.items, preferences);
-    setItems(matchedItems);
-    setSections(result.sections);
-    setCurrency(result.currency);
-    setSourceLanguage(result.sourceLanguage || 'en');
+    const positionedItems = result.items.map((item) => {
+      const layout = getOverlayLayout(item, result.items);
+      return layout ? { ...item, bounds: { x: layout.x, y: layout.y, width: layout.width, height: layout.height } } : item;
+    });
+    const matchedItems = applyPreferenceMatches(positionedItems, preferences);
+    const existingKeys = new Set(items.map(menuItemKey));
+    const newItems = matchedItems.filter((item) => {
+      const key = menuItemKey(item);
+      if (existingKeys.has(key)) return false;
+      existingKeys.add(key);
+      return true;
+    }).map((item, index) => ({ ...item, id: isAdditionalPage ? `${item.id}-page-${pageCount}-${index}` : item.id }));
+    const mergedItems = isAdditionalPage ? [...items, ...newItems] : newItems;
+    const mergedSections = isAdditionalPage
+      ? [...sections, ...result.sections.filter((section) => !sections.some((existing) => comparableMenuItem(existing) === comparableMenuItem(section)))]
+      : result.sections;
+    const nextCurrency = currency ?? result.currency;
+    const nextSourceLanguage = isAdditionalPage ? sourceLanguage : result.sourceLanguage || 'en';
+    setItems(mergedItems);
+    setSections(mergedSections);
+    setCurrency(nextCurrency);
+    setSourceLanguage(nextSourceLanguage);
+    setScanPageCount(pageCount);
+    setScanImageUri(isAdditionalPage ? null : imageUri ?? null);
+    setScanImageAspectRatio(isAdditionalPage ? 1 : imageAspectRatio ?? 1);
     setSelectedSection(null);
     setSelectedItemIds([]);
-    if (matchedItems.length > 0) {
-      const shareItems = matchedItems.map((item: MenuItem) => {
+    if (mergedItems.length > 0) {
+      const shareItems = mergedItems.map((item: MenuItem) => {
         const { matchedPreferences: _matched, ...rest } = item;
         return rest;
       });
-      const share = await api.createMenuShare({ sourceLanguage: result.sourceLanguage, currency: result.currency, sections: result.sections, items: shareItems });
+      const share = await api.createMenuShare({ sourceLanguage: nextSourceLanguage, currency: nextCurrency, sections: mergedSections, items: shareItems });
       setShareId(share.shareId ?? null);
-      const saved: SavedScan = { sourceLanguage: result.sourceLanguage, currency: result.currency, sections: result.sections, items: shareItems, shareId: share.shareId ?? null, imageUri, imageAspectRatio };
+      const saved: SavedScan = { sourceLanguage: nextSourceLanguage, currency: nextCurrency, sections: mergedSections, items: shareItems, shareId: share.shareId ?? null, imageUri: isAdditionalPage ? undefined : imageUri, imageAspectRatio: isAdditionalPage ? undefined : imageAspectRatio, pageCount };
       setRecentScan(saved);
       await AsyncStorage.setItem(activeScanKey, JSON.stringify(saved));
     }
@@ -569,13 +623,26 @@ export default function MenuScanner() {
     setLoading(true);
     try {
       const image = await prepareImage(asset);
-      setScanImageUri(image.uri);
-      setScanImageAspectRatio(image.width / image.height);
+      const ocr = await inspectMenuImage(image.uri, image.width, image.height);
+      if (ocr?.dense) {
+        const shouldContinue = await new Promise<boolean>((resolve) => {
+          Alert.alert('Large menu detected', 'This menu contains a lot of text. Scanning it may use more AI processing and can work better one page at a time.', [
+            { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+            { text: 'Scan anyway', onPress: () => resolve(true) },
+          ], { cancelable: false });
+        });
+        if (!shouldContinue) return;
+      }
       setImageZoom(1);
       setResultView('list');
       const scanLanguage = scanLanguages.has(language) ? language : 'en';
       const result = await api.scanMenu(image.uri, scanLanguage);
-      await saveScanResult(result, image.uri, image.width / image.height);
+      if (!result.error && ocr) {
+        result.items = result.items.map((item) => item.bounds ? item : { ...item, bounds: findOcrBounds(item.originalName, ocr.blocks) ?? null });
+      }
+      const isAdditionalPage = items.length > 0;
+      const pageCount = isAdditionalPage ? scanPageCount + 1 : 1;
+      await saveScanResult(result, image.uri, image.width / image.height, pageCount, isAdditionalPage);
     } catch (error) {
       Alert.alert('Scan failed', error instanceof Error ? error.message : 'Please try again.');
     } finally {
@@ -606,6 +673,7 @@ export default function MenuScanner() {
       setSections([]);
       setShareId(null);
       setSelectedSection(null);
+      setScanPageCount(0);
       await AsyncStorage.removeItem(activeScanKey);
     }
     setLanguage(nextLanguage);
@@ -621,6 +689,7 @@ export default function MenuScanner() {
     setItems([]);
     setRecentScan(null);
     setShareId(null);
+    setScanPageCount(0);
     setAccountVisible(false);
     setAccountBusy(false);
   };
@@ -644,7 +713,7 @@ export default function MenuScanner() {
   };
 
   const handleAsset = async (asset: ImagePicker.ImagePickerAsset) => {
-    if (preferences.length > 0) {
+    if (preferences.length > 0 || items.length > 0) {
       await scanAsset(asset);
       return;
     }
@@ -699,13 +768,19 @@ export default function MenuScanner() {
     setSelectedItemIds([]);
     setScanImageUri(null);
     setScanImageAspectRatio(1);
+    setScanPageCount(0);
     setImageZoom(1);
     setResultView('list');
   };
 
   const restoreRecentScan = () => {
     if (!recentScan) return;
-    setItems(applyPreferenceMatches(recentScan.items.map((item) => ({ ...item, matchedPreferences: [] })), preferences));
+    const restoredItems = recentScan.items.map((item) => ({ ...item, matchedPreferences: [] }));
+    const positionedItems = restoredItems.map((item) => {
+      const layout = getOverlayLayout(item, restoredItems);
+      return layout ? { ...item, bounds: { x: layout.x, y: layout.y, width: layout.width, height: layout.height } } : item;
+    });
+    setItems(applyPreferenceMatches(positionedItems, preferences));
     setSections(recentScan.sections);
     setCurrency(recentScan.currency);
     setSourceLanguage(recentScan.sourceLanguage || 'en');
@@ -714,6 +789,7 @@ export default function MenuScanner() {
     setSelectedItemIds([]);
     setScanImageUri(recentScan.imageUri ?? null);
     setScanImageAspectRatio(recentScan.imageAspectRatio ?? 1);
+    setScanPageCount(recentScan.pageCount ?? 1);
     setResultView('list');
   };
 
@@ -802,6 +878,7 @@ export default function MenuScanner() {
         </> : <>
           <Text style={styles.title}>{text.yourMenu}</Text>
           {menuUrl ? <View style={styles.shareRow}><TouchableOpacity style={styles.shareButton} onPress={() => void copyLink()}><Text style={styles.shareText}>{text.copyMenuLink}</Text></TouchableOpacity><TouchableOpacity style={styles.shareButton} onPress={() => void shareLink()}><Text style={styles.shareText}>{text.shareOnWhatsApp}</Text></TouchableOpacity><TouchableOpacity style={styles.shareButton} onPress={() => setQrVisible(true)}><Text style={styles.shareText}>{text.showQr}</Text></TouchableOpacity></View> : null}
+          <View style={styles.pageActions}><Text style={styles.cardHint}>Page {scanPageCount} of {maxScanPages}</Text>{scanPageCount < maxScanPages ? <TouchableOpacity style={styles.addPageButton} onPress={chooseImage} disabled={loading}><Text style={styles.addPageButtonText}>{text.scanAnotherPage}</Text></TouchableOpacity> : null}</View>
           {canViewItemsOnImage ? <View style={styles.viewModeRow}><TouchableOpacity style={[styles.viewModeButton, resultView === 'list' && styles.viewModeButtonSelected]} onPress={() => setResultView('list')}><Text style={styles.viewModeText}>{text.viewList}</Text></TouchableOpacity><TouchableOpacity style={[styles.viewModeButton, resultView === 'image' && styles.viewModeButtonSelected]} onPress={() => setResultView('image')}><Text style={styles.viewModeText}>{text.viewImage}</Text></TouchableOpacity></View> : null}
           {sections.length > 0 || selectedItemIds.length > 0 ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabs}><TouchableOpacity style={[styles.tab, selectedSection === -1 && styles.selectedTab]} onPress={() => { setSelectedSection(-1); setResultView('list'); }}><Text>{text.selectedItems} ({selectedItemIds.length})</Text></TouchableOpacity><TouchableOpacity style={[styles.tab, selectedSection === null && styles.selectedTab]} onPress={() => { setSelectedSection(null); setResultView('list'); }}><Text>All</Text></TouchableOpacity>{sections.map((section, index) => <TouchableOpacity key={`${section}-${index}`} style={[styles.tab, selectedSection === index && styles.selectedTab]} onPress={() => { setSelectedSection(index); setResultView('list'); }}><Text>{translateMenuSection(section, sourceLanguage)}</Text></TouchableOpacity>)}</ScrollView> : null}
           {selectedSection === -1 ? <View style={styles.selectedItemsPanel}>{selectedItems.map((item) => <View key={item.id} style={styles.selectedItemCard}><View style={styles.selectedOriginalRow}><Text style={styles.selectedOriginalName}>{item.originalName}</Text><TouchableOpacity style={styles.speakerButton} onPress={() => void speakItem(item.originalName)} accessibilityRole="button" accessibilityLabel={`Speak ${item.originalName}`}><Text style={styles.speakerIcon}>🔊</Text></TouchableOpacity></View><Text style={styles.selectedTranslatedName}>{item.translatedName}</Text>{item.pronunciation ? <Text style={styles.selectedPronunciation}>Say it: {item.pronunciation}</Text> : null}</View>)}</View> : null}
@@ -942,6 +1019,9 @@ const styles = StyleSheet.create({
   link: { color: '#007C83', fontWeight: '800' },
   preview: { borderRadius: 12, height: 180, width: '100%' },
   shareRow: { flexDirection: 'row', gap: 8 },
+  pageActions: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
+  addPageButton: { backgroundColor: '#E6F2F3', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10 },
+  addPageButtonText: { color: '#005E63', fontSize: 13, fontWeight: '700' },
   shareButton: { backgroundColor: '#E6F2F3', borderRadius: 10, flex: 1, padding: 12 },
   shareText: { color: '#005E63', fontSize: 13, fontWeight: '700', textAlign: 'center' },
   viewModeRow: { alignSelf: 'center', backgroundColor: '#E6F2F3', borderRadius: 10, flexDirection: 'row', padding: 3 },
@@ -952,7 +1032,7 @@ const styles = StyleSheet.create({
   menuImageCanvas: { height: '100%', position: 'absolute', width: '100%' },
   menuImage: { height: '100%', width: '100%' },
   menuImageLabel: { backgroundColor: 'rgba(255, 244, 214, 0.88)', borderColor: '#007C83', borderRadius: 4, borderWidth: 1, justifyContent: 'center', minHeight: 22, overflow: 'visible', paddingHorizontal: 4, position: 'absolute' },
-  menuImageLabelText: { color: '#102A2E', fontSize: 11, fontWeight: '800' },
+  menuImageLabelText: { color: '#102A2E', fontSize: 9, fontWeight: '800' },
   imageNotice: { backgroundColor: 'rgba(255, 244, 214, 0.94)', color: '#102A2E', fontSize: 14, fontWeight: '700', left: 16, padding: 12, position: 'absolute', right: 16, textAlign: 'center', top: '45%' },
   imageZoomControls: { alignItems: 'center', backgroundColor: 'rgba(16, 42, 46, 0.88)', borderRadius: 8, bottom: 10, flexDirection: 'row', position: 'absolute', right: 10 },
   imageZoomButton: { alignItems: 'center', height: 34, justifyContent: 'center', width: 36 },
