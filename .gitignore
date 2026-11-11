@@ -1,4 +1,17 @@
 node_modules
 
+# Expo and build output
+.expo/
+dist/
+
 # local env files
-.env*.local
+.env
+.env.*
+!.env.example
+.envrc
+
+# local OS metadata
+.DS_Store
+
+# local signing material
+android/app/debug.keystore

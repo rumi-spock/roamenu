@@ -2,11 +2,40 @@
   "folders": [
     {
       "name": "roamenu",
-      "path": "."
+      "path": "apps/roamenu"
     },
     {
       "name": "roamenu-website",
       "path": "../roamenu-website"
+    },
+    {
+      "name": "restaurant-owner",
+      "path": "apps/restaurant-owner"
+    },
+    {
+      "name": "shared-packages",
+      "path": "packages"
     }
-  ]
+  ],
+  "settings": {
+    "chat.tools.terminal.autoApprove": {
+      "/^printf '%s\\\\n' '--- tools ---' && command -v ffprobe \\|\\| true && command -v identify \\|\\| true && command -v exiftool \\|\\| true && printf '%s\\\\n' '--- files ---' && ls -lh assets/menu-before\\.jpeg assets/scan-result\\.mp4 assets/menu-scan-demo\\.gif && printf '%s\\\\n' '--- image metadata ---' && identify -verbose assets/menu-before\\.jpeg 2>/dev/null \\| grep -E '\\^\\(  File:\\|  Format:\\|  Geometry:\\|  Resolution:\\|  Colorspace:\\|  Quality:\\|  Delay:\\|  Iterations:\\|  Compression:\\)' \\|\\| true && identify -verbose assets/menu-scan-demo\\.gif 2>/dev/null \\| grep -E '\\^\\(  File:\\|  Format:\\|  Geometry:\\|  Resolution:\\|  Colorspace:\\|  Quality:\\|  Delay:\\|  Iterations:\\|  Compression:\\|  Frames:\\)' \\|\\| true && printf '%s\\\\n' '--- video metadata ---' && ffprobe -v error -show_entries format=filename,format_name,duration,size:stream=index,codec_name,codec_type,width,height,r_frame_rate,avg_frame_rate,nb_frames,duration,pix_fmt -of default=noprint_wrappers=1 assets/scan-result\\.mp4 2>/dev/null \\|\\| true && printf '%s\\\\n' '--- gif stream metadata ---' && ffprobe -v error -show_entries format=filename,format_name,duration,size:stream=index,codec_name,codec_type,width,height,r_frame_rate,avg_frame_rate,nb_frames,duration,pix_fmt -of default=noprint_wrappers=1 assets/menu-scan-demo\\.gif 2>/dev/null \\|\\| true$/": {
+        "approve": true,
+        "matchCommandLine": true
+      },
+      "ffmpeg": true,
+      "ffprobe": true,
+      "/^python3 -c 'from PIL import Image, ImageDraw, ImageFont; print\\(\"Pillow available\"\\)'$/": {
+        "approve": true,
+        "matchCommandLine": true
+      },
+      "/^node -e \"import\\('sharp'\\)\\.then\\(\\(\\) => console\\.log\\('sharp available'\\)\\)\\.catch\\(\\(\\) => console\\.log\\('sharp unavailable'\\)\\)\"$/": {
+        "approve": true,
+        "matchCommandLine": true
+      },
+      "exit": true,
+      "/usr/bin/git": true,
+      "/usr/bin/grep": true
+    }
+  }
 }

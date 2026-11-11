@@ -8,7 +8,8 @@ The product name is provisional.
 
 ## Workspace projects
 
-- `roamenu`: Expo mobile app
+- `apps/roamenu`: Expo mobile app
+- `apps/restaurant-owner`: Expo mobile app for restaurant owners
 - `../roamenu-website`: public handoff website and API/authentication service
 
 Open `roamenu.code-workspace` to load all three projects together.
@@ -19,7 +20,7 @@ Run each project in its own terminal:
 
 ```sh
 cd ../roamenu-website && npm install && npm run dev
-npm install && npm run start
+cd apps/roamenu && npm install && npm run start
 ```
 
 The website and API use port `3001`, and Expo uses its usual development port. Configure local origins and API addresses in each project's `.env.local`; safe templates are provided in `.env.example` files.
