@@ -9,7 +9,7 @@ import { AccessTokenRequest, makeRedirectUri } from 'expo-auth-session';
 import * as Google from 'expo-auth-session/providers/google';
 import QRCode from 'qrcode';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Modal, Platform, SafeAreaView, ScrollView, StatusBar as NativeStatusBar, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Animated, Image, KeyboardAvoidingView, Modal, Platform, SafeAreaView, ScrollView, StatusBar as NativeStatusBar, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Circle, Path, Rect, Svg } from 'react-native-svg';
 import { languageOptions, type SharedLanguage } from '@roamenu/shared-utils/translations';
@@ -41,8 +41,40 @@ const speechLocales: Record<string, string> = {
   'zh-CN': 'zh-CN', ja: 'ja-JP', ko: 'ko-KR',
 };
 
+const scanStatusMessages: Record<SharedLanguage, string[]> = {
+  en: ['Reading your menu', 'Detecting menu sections', 'Finding dishes and prices', 'Checking ingredients', 'Translating the menu', 'Organising everything for you', 'There are quite a few dishes to review', 'We are still working through your menu', 'This is taking longer because the menu has many items', 'Large menus can take a little more time. We are still working on it.'],
+  es: ['Estamos leyendo tu menú', 'Detectando las secciones del menú', 'Buscando platos y precios', 'Comprobando los ingredientes', 'Traduciendo el menú', 'Organizándolo todo para ti', 'Hay bastantes platos que revisar', 'Seguimos procesando tu menú', 'Tardamos un poco más porque el menú tiene muchos platos', 'Los menús grandes pueden tardar un poco más. Seguimos trabajando.'],
+  pt: ['Estamos a ler o seu menu', 'A detetar as secções do menu', 'A encontrar pratos e preços', 'A verificar os ingredientes', 'A traduzir o menu', 'A organizar tudo para si', 'Há vários pratos para analisar', 'Ainda estamos a processar o seu menu', 'Está a demorar mais porque o menu tem muitos itens', 'Os menus grandes podem demorar um pouco mais. Continuamos a trabalhar.'],
+  nl: ['We lezen je menu', 'We herkennen de menuonderdelen', 'We zoeken gerechten en prijzen', 'We controleren de ingrediënten', 'We vertalen het menu', 'We ordenen alles voor je', 'Er zijn heel wat gerechten om te bekijken', 'We werken nog aan je menu', 'Dit duurt langer omdat het menu veel items bevat', 'Grote menu’s kunnen wat meer tijd kosten. We zijn nog bezig.'],
+  uk: ['Читаємо ваше меню', 'Визначаємо розділи меню', 'Знаходимо страви та ціни', 'Перевіряємо інгредієнти', 'Перекладаємо меню', 'Упорядковуємо все для вас', 'Потрібно опрацювати чимало страв', 'Ми все ще опрацьовуємо ваше меню', 'Це займає більше часу, бо в меню багато страв', 'Великі меню можуть потребувати трохи більше часу. Ми продовжуємо роботу.'],
+  ro: ['Citim meniul tău', 'Detectăm secțiunile meniului', 'Căutăm preparatele și prețurile', 'Verificăm ingredientele', 'Traducem meniul', 'Organizăm totul pentru tine', 'Sunt destul de multe preparate de verificat', 'Încă lucrăm la meniul tău', 'Durează mai mult deoarece meniul are multe preparate', 'Meniurile mari pot necesita puțin mai mult timp. Încă lucrăm.'],
+  lt: ['Skaitome jūsų meniu', 'Nustatome meniu skyrius', 'Ieškome patiekalų ir kainų', 'Tikriname ingredientus', 'Verčiame meniu', 'Viską sutvarkome už jus', 'Reikia peržiūrėti nemažai patiekalų', 'Vis dar tvarkome jūsų meniu', 'Tai užtrunka ilgiau, nes meniu yra daug patiekalų', 'Dideli meniu gali užtrukti šiek tiek ilgiau. Vis dar dirbame.'],
+  sv: ['Läser din meny', 'Identifierar menyns avsnitt', 'Hittar rätter och priser', 'Kontrollerar ingredienser', 'Översätter menyn', 'Ordnar allt åt dig', 'Det är många rätter att gå igenom', 'Vi arbetar fortfarande med din meny', 'Det tar längre tid eftersom menyn innehåller många rätter', 'Stora menyer kan ta lite längre tid. Vi arbetar fortfarande.'],
+  fi: ['Luemme ruokalistaasi', 'Tunnistamme ruokalistan osiot', 'Etsimme annokset ja hinnat', 'Tarkistamme ainesosat', 'Käännämme ruokalistan', 'Järjestämme kaiken puolestasi', 'Tarkistettavia annoksia on melko paljon', 'Käsittelemme vielä ruokalistaasi', 'Tämä kestää kauemmin, koska ruokalistalla on paljon annoksia', 'Suuret ruokalistat voivat kestää hieman kauemmin. Työskentelemme edelleen.'],
+  nb: ['Leser menyen din', 'Finner menyens seksjoner', 'Finner retter og priser', 'Sjekker ingrediensene', 'Oversetter menyen', 'Organiserer alt for deg', 'Det er mange retter å gå gjennom', 'Vi arbeider fortsatt med menyen din', 'Dette tar lengre tid fordi menyen har mange retter', 'Store menyer kan ta litt lengre tid. Vi arbeider fortsatt.'],
+  da: ['Læser din menu', 'Finder menuens sektioner', 'Finder retter og priser', 'Tjekker ingredienserne', 'Oversætter menuen', 'Organiserer det hele for dig', 'Der er mange retter at gennemgå', 'Vi arbejder stadig med din menu', 'Det tager længere tid, fordi menuen har mange retter', 'Store menuer kan tage lidt længere tid. Vi arbejder stadig.'],
+  'zh-CN': ['正在读取你的菜单', '正在识别菜单分区', '正在查找菜品和价格', '正在检查配料', '正在翻译菜单', '正在为你整理所有内容', '需要查看的菜品比较多', '我们仍在处理你的菜单', '由于菜单包含很多菜品，这需要更长时间', '大型菜单可能需要多一点时间。我们仍在继续处理。'],
+  ja: ['メニューを読み取っています', 'メニューの項目を確認しています', '料理と価格を探しています', '食材を確認しています', 'メニューを翻訳しています', '内容を整理しています', '確認する料理がたくさんあります', 'メニューを引き続き処理しています', '料理の数が多いため、通常より時間がかかっています', '大きなメニューは少し時間がかかることがあります。引き続き処理しています。'],
+  ko: ['메뉴를 읽는 중입니다', '메뉴 구성을 확인하는 중입니다', '요리와 가격을 찾는 중입니다', '재료를 확인하는 중입니다', '메뉴를 번역하는 중입니다', '모든 내용을 정리하는 중입니다', '확인할 요리가 꽤 많습니다', '메뉴를 계속 처리하고 있습니다', '메뉴에 요리가 많아 시간이 더 걸리고 있습니다', '메뉴가 크면 시간이 조금 더 걸릴 수 있습니다. 계속 작업 중입니다.'],
+};
+
 function getSpeechLocale(language: string): string {
   return speechLocales[language] ?? language;
+}
+
+function getDeviceLanguage(): SharedLanguage {
+  let locale = '';
+  try {
+    locale = Intl.DateTimeFormat().resolvedOptions().locale.replace('_', '-');
+  } catch {
+    return 'en';
+  }
+  const exact = languageOptions.find((option) => option.code.toLowerCase() === locale.toLowerCase());
+  if (exact) return exact.code;
+  const baseLanguage = locale.split('-')[0].toLowerCase();
+  if (baseLanguage === 'zh') return 'zh-CN';
+  if (baseLanguage === 'no') return 'nb';
+  return languageOptions.find((option) => option.code.toLowerCase() === baseLanguage)?.code ?? 'en';
 }
 
 const uiText = {
@@ -258,6 +290,7 @@ export default function MenuScanner() {
   const [detectedCurrency, setCurrency] = useState<string | null>('__UNKNOWN__');
   const [sourceLanguage, setSourceLanguage] = useState('en');
   const [scanImageUri, setScanImageUri] = useState<string | null>(null);
+  const [scanPreviewUri, setScanPreviewUri] = useState<string | null>(null);
   const [scanImageAspectRatio, setScanImageAspectRatio] = useState(1);
   const [scanPageCount, setScanPageCount] = useState(0);
   const [imageZoom, setImageZoom] = useState(1);
@@ -276,14 +309,19 @@ export default function MenuScanner() {
   const [language, setLanguage] = useState<SharedLanguage>('en');
   const [accountBusy, setAccountBusy] = useState(false);
   const [downloadedText, setDownloadedText] = useState<Partial<UiText>>({});
+  const [scanMessageIndex, setScanMessageIndex] = useState(0);
   const [googleBusy, setGoogleBusy] = useState(false);
   const [appleAvailable, setAppleAvailable] = useState(false);
   const [appleBusy, setAppleBusy] = useState(false);
   const speechRequestId = useRef(0);
   const speechOperation = useRef(Promise.resolve());
+  const laserProgress = useRef(new Animated.Value(0)).current;
   const text = { ...uiText.en, ...uiText[language as UiLanguage], ...localizedUiText[language as UiLanguage], ...authUiText[language], ...extraUiText[language as UiLanguage], ...downloadedText };
   const authLabels = passwordAuthLabels[language];
   const legalText = legalUiText[language];
+  const scanMessages = scanStatusMessages[language] ?? scanStatusMessages.en;
+  const scanStatus = scanMessageIndex < scanMessages.length ? scanMessages[scanMessageIndex] : scanMessages[7 + ((scanMessageIndex - scanMessages.length) % 3)];
+  const laserOffset = laserProgress.interpolate({ inputRange: [0, 1], outputRange: [0, 332] });
   const [googleRequest, googleResponse, promptGoogle] = Google.useAuthRequest({
     iosClientId: googleIosClientId,
     androidClientId: googleAndroidClientId,
@@ -299,6 +337,24 @@ export default function MenuScanner() {
     speechRequestId.current += 1;
     void Speech.stop();
   }, []);
+
+  useEffect(() => {
+    if (!loading) {
+      setScanMessageIndex(0);
+      laserProgress.setValue(0);
+      return;
+    }
+    const timer = setInterval(() => setScanMessageIndex((index) => index + 1), 5000);
+    const laser = Animated.loop(Animated.sequence([
+      Animated.timing(laserProgress, { toValue: 1, duration: 2600, useNativeDriver: true }),
+      Animated.delay(350),
+    ]));
+    laser.start();
+    return () => {
+      clearInterval(timer);
+      laser.stop();
+    };
+  }, [language, laserProgress, loading]);
 
   useEffect(() => {
     void AppleAuthentication.isAvailableAsync().then(setAppleAvailable);
@@ -360,6 +416,7 @@ export default function MenuScanner() {
       const token = await loadAuthToken();
       const savedLanguage = await AsyncStorage.getItem(languageKey);
       if (languageOptions.some((option) => option.code === savedLanguage)) setLanguage(savedLanguage as SharedLanguage);
+      else setLanguage(getDeviceLanguage());
       if (token) {
         await saveAuthToken(token);
         api.setAuthToken(token);
@@ -643,6 +700,7 @@ export default function MenuScanner() {
   };
 
   const scanAsset = async (asset: ImagePicker.ImagePickerAsset) => {
+    setScanPreviewUri(asset.uri);
     setLoading(true);
     try {
       const image = await prepareImage(asset);
@@ -670,6 +728,7 @@ export default function MenuScanner() {
       Alert.alert('Scan failed', error instanceof Error ? error.message : 'Please try again.');
     } finally {
       setLoading(false);
+      setScanPreviewUri(null);
     }
   };
 
@@ -916,7 +975,7 @@ export default function MenuScanner() {
         </>}
       </ScrollView>
       {canViewItemsOnImage ? <View style={styles.fixedViewModeRow}><TouchableOpacity style={[styles.viewModeButton, resultView === 'list' && styles.viewModeButtonSelected]} onPress={() => setResultView('list')} accessibilityRole="button" accessibilityLabel={text.viewList}><CardsViewIcon mode="list" color={resultView === 'list' ? '#007C83' : '#8A989A'} /></TouchableOpacity><TouchableOpacity style={[styles.viewModeButton, resultView === 'image' && styles.viewModeButtonSelected]} onPress={() => setResultView('image')} accessibilityRole="button" accessibilityLabel={text.viewImage}><CardsViewIcon mode="image" color={resultView === 'image' ? '#F2B84B' : '#8A989A'} /></TouchableOpacity></View> : null}
-      <Modal visible={loading} transparent animationType="fade" onRequestClose={() => undefined}><View style={styles.scanModalOverlay}><View style={styles.scanModalCard}><ActivityIndicator color="#007C83" size="large" /><Text style={styles.scanModalTitle}>{text.analysing}</Text><Text style={styles.scanModalText}>{text.analysingHint}</Text><View style={styles.scanProgressTrack}><View style={styles.scanProgressBar} /></View></View></View></Modal>
+      <Modal visible={loading} transparent animationType="fade" onRequestClose={() => undefined}><View style={styles.scanModalOverlay}><View style={styles.scanModalCard}><Text style={styles.scanModalTitle}>{text.analysing}</Text><View style={styles.scanImageFrame}>{scanPreviewUri ? <Image source={{ uri: scanPreviewUri }} style={styles.scanPreviewImage} resizeMode="contain" /> : <ActivityIndicator color="#007C83" size="large" />}<Animated.View style={[styles.scanLaserGlow, { transform: [{ translateY: laserOffset }] }]} /><Animated.View style={[styles.scanLaserLine, { transform: [{ translateY: laserOffset }] }]} /></View><Text style={styles.scanModalText}>{scanStatus}</Text></View></View></Modal>
       <Modal visible={promptVisible} transparent animationType="slide" onRequestClose={() => { setPromptVisible(false); setSelectedAsset(null); }}><KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}><View style={styles.preferenceModal}><Text style={styles.modalTitle}>{text.beforeScan}</Text><Text style={styles.modalText}>{text.promptHint}</Text><TextInput value={preferenceInput} onChangeText={setPreferenceInput} placeholder="e.g. nuts, dairy, shellfish" style={styles.preferenceInput} multiline /><View style={styles.preferenceRow}><Text style={styles.cardHint}>{text.saveNextTime}</Text><Switch value={saveForNextTime} onValueChange={setSaveForNextTime} /></View><TouchableOpacity style={styles.confirmButton} onPress={() => void confirmPreferences()}><Text style={styles.confirmButtonText}>{text.scanMenu}</Text></TouchableOpacity><TouchableOpacity onPress={() => { setPromptVisible(false); setSelectedAsset(null); }}><Text style={styles.cancelText}>{text.cancel}</Text></TouchableOpacity></View></KeyboardAvoidingView></Modal>
       <Modal visible={qrVisible} transparent animationType="fade" onRequestClose={() => setQrVisible(false)}>
         <View style={styles.modalOverlay}>
@@ -1225,12 +1284,14 @@ const styles = StyleSheet.create({
   warning: { color: '#B3261E', fontSize: 14, fontWeight: '800' },
   modalOverlay: { backgroundColor: 'rgba(16, 42, 46, 0.35)', flex: 1, justifyContent: 'center', padding: 20 },
   qrCard: { alignItems: 'center', backgroundColor: '#FFFFFF', borderRadius: 16, gap: 16, padding: 20 },
-  scanModalOverlay: { alignItems: 'center', backgroundColor: 'rgba(16, 42, 46, 0.45)', flex: 1, justifyContent: 'center', padding: 20 },
-  scanModalCard: { alignItems: 'center', backgroundColor: '#FFFFFF', borderRadius: 16, gap: 14, maxWidth: 380, padding: 28, width: '100%' },
+  scanModalOverlay: { alignItems: 'center', backgroundColor: 'rgba(16, 42, 46, 0.58)', flex: 1, justifyContent: 'center', padding: 20 },
+  scanModalCard: { alignItems: 'center', backgroundColor: '#FFFFFF', borderRadius: 16, gap: 14, maxWidth: 380, padding: 24, width: '100%' },
   scanModalTitle: { color: '#102A2E', fontSize: 22, fontWeight: '700', textAlign: 'center' },
   scanModalText: { color: '#5A6E71', fontSize: 14, lineHeight: 21, textAlign: 'center' },
-  scanProgressTrack: { backgroundColor: '#E6F2F3', borderRadius: 4, height: 8, overflow: 'hidden', width: '100%' },
-  scanProgressBar: { backgroundColor: '#007C83', borderRadius: 4, height: '100%', width: '42%' },
+  scanImageFrame: { alignItems: 'center', backgroundColor: '#F1F7F7', borderColor: '#D5E6E7', borderRadius: 10, borderWidth: 1, height: 338, justifyContent: 'center', overflow: 'hidden', width: '100%' },
+  scanPreviewImage: { height: '100%', width: '100%' },
+  scanLaserGlow: { backgroundColor: 'rgba(0, 124, 131, 0.22)', height: 18, left: 0, position: 'absolute', right: 0, top: 0 },
+  scanLaserLine: { backgroundColor: '#00A8A8', height: 3, left: 0, position: 'absolute', right: 0, shadowColor: '#00A8A8', shadowOffset: { height: 0, width: 0 }, shadowOpacity: 0.9, shadowRadius: 8, top: 0 },
   preferenceModal: { backgroundColor: '#FFFFFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, gap: 14, padding: 22 },
   modalTitle: { color: '#102A2E', fontSize: 22, fontWeight: '800' },
   modalText: { color: '#5A6E71', fontSize: 14, lineHeight: 20 },

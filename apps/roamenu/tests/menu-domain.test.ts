@@ -32,6 +32,7 @@ describe("menu domain", () => {
   it("formats minor-unit prices using the currency's fraction digits", () => {
     expect(formatMenuPrice(1250, "GBP", "en-GB")).toBe("£12.50");
     expect(formatMenuPrice(1200, "JPY", "ja-JP")).toBe("￥1,200");
+    expect(formatMenuPrice(8000, "KRW", "ko-KR")).toContain("8,000");
     expect(formatMenuPrice(1250, null, "en-GB")).toBe("12.50");
   });
 
