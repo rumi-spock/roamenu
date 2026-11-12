@@ -231,7 +231,16 @@ type SavedScan = {
   imageUri?: string;
   imageAspectRatio?: number;
   pageCount?: number;
+  pages?: SavedScanPage[];
 };
+
+type SavedScanPage = {
+  imageUri: string;
+  imageAspectRatio: number;
+  items: Omit<MenuItem, 'matchedPreferences'>[];
+};
+
+type ScanPage = { imageUri: string; imageAspectRatio: number; items: MenuItem[] };
 
 function comparableMenuItem(value: string): string {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
@@ -263,6 +272,10 @@ function menuItemKey(item: MenuItem): string {
   return [item.originalName, item.translatedName, item.priceInPence ?? ''].map((value) => comparableMenuItem(String(value))).join('|');
 }
 
+function ScanPagesImageView({ pages, imageZoom, setImageZoom }: { pages: ScanPage[]; imageZoom: number; setImageZoom: (update: (value: number) => number) => void }) {
+  return <View style={styles.multiPageImageViewer}><ScrollView contentContainerStyle={styles.multiPageImageContent} showsVerticalScrollIndicator><Text style={styles.multiPageImageTitle}>Menu pages</Text>{pages.map((page, index) => <View key={`${page.imageUri}-${index}`} style={styles.scanPageBlock}><Text style={styles.scanPageLabel}>Page {index + 1} of {pages.length}</Text><View style={[styles.menuImageFrame, { aspectRatio: page.imageAspectRatio }]}><View style={[styles.menuImageCanvas, { transform: [{ scale: imageZoom }] }]}><Image source={{ uri: page.imageUri }} style={styles.menuImage} resizeMode="contain" />{page.items.some((item) => item.bounds) ? page.items.map((item) => item.bounds ? <View key={item.id} style={[styles.menuImageLabel, { left: `${item.bounds.x * 100}%`, top: `${item.bounds.y * 100}%`, width: `${item.bounds.width * 100}%`, height: `${item.bounds.height * 100}%` }]}><Text style={styles.menuImageLabelText}>{item.number ? `${item.number} ` : ''}{item.translatedName}</Text></View> : null) : <Text style={styles.imageNotice}>Item locations were not returned for this page.</Text>}</View></View></View>)}</ScrollView><View style={styles.imageZoomControls}><TouchableOpacity style={styles.imageZoomButton} onPress={() => setImageZoom((zoom) => Math.max(1, zoom - 0.5))} accessibilityRole="button" accessibilityLabel="Zoom out"><Text style={styles.imageZoomButtonText}>−</Text></TouchableOpacity><TouchableOpacity style={styles.imageZoomReset} onPress={() => setImageZoom(() => 1)} accessibilityRole="button" accessibilityLabel="Reset image zoom"><Text style={styles.imageZoomResetText}>{Math.round(imageZoom * 100)}%</Text></TouchableOpacity><TouchableOpacity style={styles.imageZoomButton} onPress={() => setImageZoom((zoom) => Math.min(3, zoom + 0.5))} accessibilityRole="button" accessibilityLabel="Zoom in"><Text style={styles.imageZoomButtonText}>+</Text></TouchableOpacity></View></View>;
+}
+
 const api = new MenuApi(apiUrl);
 type StorageApi = {
   getItem: (key: string) => Promise<string | null>;
@@ -292,6 +305,7 @@ export default function MenuScanner() {
   const [scanImageUri, setScanImageUri] = useState<string | null>(null);
   const [scanPreviewUri, setScanPreviewUri] = useState<string | null>(null);
   const [scanImageAspectRatio, setScanImageAspectRatio] = useState(1);
+  const [scanPages, setScanPages] = useState<ScanPage[]>([]);
   const [scanPageCount, setScanPageCount] = useState(0);
   const [imageZoom, setImageZoom] = useState(1);
   const [resultView, setResultView] = useState<'list' | 'image'>('list');
@@ -400,7 +414,7 @@ export default function MenuScanner() {
   const menuUrl = shareId ? `${publicSiteUrl}/menu/${shareId}` : null;
   const selectedItems = items.filter((item) => selectedItemIds.includes(item.id));
   const visibleItems = selectedSection === -1 ? [] : selectedSection === null ? items : items.filter((item) => item.section === selectedSection);
-  const canViewItemsOnImage = Boolean(scanPageCount <= 1 && scanImageUri && items.some((item) => item.bounds));
+  const canViewItemsOnImage = Boolean(scanPages.length > 0 && scanPages.some((page) => page.items.some((item) => item.bounds)));
   const qrCodeMatrix = useMemo(() => {
     if (!menuUrl) return null;
     try {
@@ -654,7 +668,7 @@ export default function MenuScanner() {
     return rendered.saveAsync({ compress: 0.82, format: ImageManipulator.SaveFormat.JPEG });
   };
 
-  const saveScanResult = async (result: MenuScanResult, imageUri: string | undefined, imageAspectRatio: number | undefined, pageCount: number, isAdditionalPage: boolean) => {
+  const saveScanResult = async (result: MenuScanResult, imageUri: string, imageAspectRatio: number, pageCount: number, isAdditionalPage: boolean) => {
     if (result.error) {
       Alert.alert('Scan failed', result.error);
       return;
@@ -677,13 +691,16 @@ export default function MenuScanner() {
       : result.sections;
     const nextCurrency = (detectedCurrency === '__UNKNOWN__' ? null : detectedCurrency) ?? result.currency;
     const nextSourceLanguage = isAdditionalPage ? sourceLanguage : result.sourceLanguage || 'en';
+    const nextPage: ScanPage = { imageUri, imageAspectRatio: imageAspectRatio ?? 1, items: matchedItems };
+    const nextPages = isAdditionalPage ? [...scanPages, nextPage] : [nextPage];
     setItems(mergedItems);
     setSections(mergedSections);
     setCurrency(nextCurrency ?? '__UNKNOWN__');
     setSourceLanguage(nextSourceLanguage);
     setScanPageCount(pageCount);
-    setScanImageUri(isAdditionalPage ? null : imageUri ?? null);
-    setScanImageAspectRatio(isAdditionalPage ? 1 : imageAspectRatio ?? 1);
+    setScanPages(nextPages);
+    setScanImageUri(nextPages[0]?.imageUri ?? null);
+    setScanImageAspectRatio(nextPages[0]?.imageAspectRatio ?? 1);
     setSelectedSection(null);
     setSelectedItemIds([]);
     if (mergedItems.length > 0) {
@@ -693,7 +710,8 @@ export default function MenuScanner() {
       });
       const share = await api.createMenuShare({ sourceLanguage: nextSourceLanguage, currency: nextCurrency, sections: mergedSections, items: shareItems });
       setShareId(share.shareId ?? null);
-      const saved: SavedScan = { sourceLanguage: nextSourceLanguage, currency: nextCurrency, sections: mergedSections, items: shareItems, shareId: share.shareId ?? null, imageUri: isAdditionalPage ? undefined : imageUri, imageAspectRatio: isAdditionalPage ? undefined : imageAspectRatio, pageCount };
+      const savedPages: SavedScanPage[] = nextPages.map((page) => ({ imageUri: page.imageUri, imageAspectRatio: page.imageAspectRatio, items: page.items.map(({ matchedPreferences: _matched, ...item }) => item) }));
+      const saved: SavedScan = { sourceLanguage: nextSourceLanguage, currency: nextCurrency, sections: mergedSections, items: shareItems, shareId: share.shareId ?? null, imageUri: savedPages[0]?.imageUri, imageAspectRatio: savedPages[0]?.imageAspectRatio, pageCount, pages: savedPages };
       setRecentScan(saved);
       await AsyncStorage.setItem(activeScanKey, JSON.stringify(saved));
     }
@@ -755,6 +773,7 @@ export default function MenuScanner() {
       setSections([]);
       setShareId(null);
       setSelectedSection(null);
+      setScanPages([]);
       setScanPageCount(0);
       await AsyncStorage.removeItem(activeScanKey);
     }
@@ -771,6 +790,7 @@ export default function MenuScanner() {
     setItems([]);
     setRecentScan(null);
     setShareId(null);
+    setScanPages([]);
     setScanPageCount(0);
     setAccountVisible(false);
     setAccountBusy(false);
@@ -855,6 +875,7 @@ export default function MenuScanner() {
     setSelectedItemIds([]);
     setScanImageUri(null);
     setScanImageAspectRatio(1);
+    setScanPages([]);
     setScanPageCount(0);
     setImageZoom(1);
     setResultView('list');
@@ -874,8 +895,10 @@ export default function MenuScanner() {
     setShareId(recentScan.shareId);
     setSelectedSection(null);
     setSelectedItemIds([]);
-    setScanImageUri(recentScan.imageUri ?? null);
-    setScanImageAspectRatio(recentScan.imageAspectRatio ?? 1);
+    const restoredPages: ScanPage[] = recentScan.pages?.map((page) => ({ ...page, items: page.items.map((item) => ({ ...item, matchedPreferences: [] })) })) ?? (recentScan.imageUri ? [{ imageUri: recentScan.imageUri, imageAspectRatio: recentScan.imageAspectRatio ?? 1, items: restoredItems }] : []);
+    setScanPages(restoredPages);
+    setScanImageUri(restoredPages[0]?.imageUri ?? null);
+    setScanImageAspectRatio(restoredPages[0]?.imageAspectRatio ?? 1);
     setScanPageCount(recentScan.pageCount ?? 1);
     setResultView('list');
   };
@@ -974,6 +997,7 @@ export default function MenuScanner() {
           {resultView === 'image' && scanImageUri ? <View style={[styles.menuImageFrame, { aspectRatio: scanImageAspectRatio }]}><View style={[styles.menuImageCanvas, { transform: [{ scale: imageZoom }] }]}><Image source={{ uri: scanImageUri }} style={styles.menuImage} resizeMode="contain" />{items.some((item) => item.bounds) ? visibleItems.map((item) => item.bounds ? <View key={item.id} style={[styles.menuImageLabel, { left: `${item.bounds.x * 100}%`, top: `${item.bounds.y * 100}%`, width: `${item.bounds.width * 100}%`, height: `${item.bounds.height * 100}%` }]}><Text style={styles.menuImageLabelText}>{item.translatedName}</Text></View> : null) : <Text style={styles.imageNotice}>{text.imageLocationsUnavailable}</Text>}</View><View style={styles.imageZoomControls}><TouchableOpacity style={styles.imageZoomButton} onPress={() => setImageZoom((zoom) => Math.max(1, zoom - 0.5))} accessibilityRole="button" accessibilityLabel="Zoom out"><Text style={styles.imageZoomButtonText}>−</Text></TouchableOpacity><TouchableOpacity style={styles.imageZoomReset} onPress={() => setImageZoom(1)} accessibilityRole="button" accessibilityLabel="Reset image zoom"><Text style={styles.imageZoomResetText}>{Math.round(imageZoom * 100)}%</Text></TouchableOpacity><TouchableOpacity style={styles.imageZoomButton} onPress={() => setImageZoom((zoom) => Math.min(3, zoom + 0.5))} accessibilityRole="button" accessibilityLabel="Zoom in"><Text style={styles.imageZoomButtonText}>+</Text></TouchableOpacity></View></View> : <>{visibleItems.map((item) => <View key={item.id} style={[styles.itemCard, item.matchedPreferences.length > 0 && styles.warningCard]}><TouchableOpacity style={[styles.itemSelectButton, selectedItemIds.includes(item.id) && styles.itemSelectButtonSelected]} onPress={() => toggleItemSelection(item.id)} accessibilityRole="checkbox" accessibilityState={{ checked: selectedItemIds.includes(item.id) }} accessibilityLabel={selectedItemIds.includes(item.id) ? text.deselectItem : text.selectItem}><Text style={[styles.itemSelectText, selectedItemIds.includes(item.id) && styles.itemSelectTextSelected]}>{selectedItemIds.includes(item.id) ? '✓' : '+'}</Text></TouchableOpacity><View style={styles.itemHeader}><View style={styles.itemNames}><Text style={styles.itemName}>{item.number ? `${item.number}. ` : ''}{item.translatedName}</Text><View style={styles.originalRow}><TouchableOpacity style={styles.speakerButton} onPress={() => void speakItem(selectedSection === -1 ? item.translatedName : item.originalName)} accessibilityRole="button" accessibilityLabel={`Speak ${selectedSection === -1 ? item.translatedName : item.originalName}`}><Text style={styles.speakerIcon}>🔊</Text></TouchableOpacity><Text style={styles.originalName}>{item.originalName}</Text></View></View>{item.priceInPence !== null && detectedCurrency ? <Text style={styles.price}>{formatMenuPrice(item.priceInPence, detectedCurrency, sourceLanguage)}</Text> : null}</View>{item.pronunciation ? <Text style={styles.detail}>{text.sayIt} {item.pronunciation}</Text> : null}<Text style={styles.detail}>{item.description}</Text>{item.allergens.length > 0 ? <Text style={styles.detail}>{text.allergens} {item.allergens.join(', ')}</Text> : null}{item.matchedPreferences.length > 0 ? <Text style={styles.warning}>Matches: {item.matchedPreferences.join(', ')}</Text> : null}</View>)}</>}
         </>}
       </ScrollView>
+      {resultView === 'image' && scanPages.length > 1 ? <ScanPagesImageView pages={scanPages} imageZoom={imageZoom} setImageZoom={(update) => setImageZoom(update)} /> : null}
       {canViewItemsOnImage ? <View style={styles.fixedViewModeRow}><TouchableOpacity style={[styles.viewModeButton, resultView === 'list' && styles.viewModeButtonSelected]} onPress={() => setResultView('list')} accessibilityRole="button" accessibilityLabel={text.viewList}><CardsViewIcon mode="list" color={resultView === 'list' ? '#007C83' : '#8A989A'} /></TouchableOpacity><TouchableOpacity style={[styles.viewModeButton, resultView === 'image' && styles.viewModeButtonSelected]} onPress={() => setResultView('image')} accessibilityRole="button" accessibilityLabel={text.viewImage}><CardsViewIcon mode="image" color={resultView === 'image' ? '#F2B84B' : '#8A989A'} /></TouchableOpacity></View> : null}
       <Modal visible={loading} transparent animationType="fade" onRequestClose={() => undefined}><View style={styles.scanModalOverlay}><View style={styles.scanModalCard}><Text style={styles.scanModalTitle}>{text.analysing}</Text><View style={styles.scanImageFrame}>{scanPreviewUri ? <Image source={{ uri: scanPreviewUri }} style={styles.scanPreviewImage} resizeMode="contain" /> : <ActivityIndicator color="#007C83" size="large" />}<Animated.View style={[styles.scanLaserGlow, { transform: [{ translateY: laserOffset }] }]} /><Animated.View style={[styles.scanLaserLine, { transform: [{ translateY: laserOffset }] }]} /></View><Text style={styles.scanModalText}>{scanStatus}</Text></View></View></Modal>
       <Modal visible={promptVisible} transparent animationType="slide" onRequestClose={() => { setPromptVisible(false); setSelectedAsset(null); }}><KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}><View style={styles.preferenceModal}><Text style={styles.modalTitle}>{text.beforeScan}</Text><Text style={styles.modalText}>{text.promptHint}</Text><TextInput value={preferenceInput} onChangeText={setPreferenceInput} placeholder="e.g. nuts, dairy, shellfish" style={styles.preferenceInput} multiline /><View style={styles.preferenceRow}><Text style={styles.cardHint}>{text.saveNextTime}</Text><Switch value={saveForNextTime} onValueChange={setSaveForNextTime} /></View><TouchableOpacity style={styles.confirmButton} onPress={() => void confirmPreferences()}><Text style={styles.confirmButtonText}>{text.scanMenu}</Text></TouchableOpacity><TouchableOpacity onPress={() => { setPromptVisible(false); setSelectedAsset(null); }}><Text style={styles.cancelText}>{text.cancel}</Text></TouchableOpacity></View></KeyboardAvoidingView></Modal>
@@ -1243,10 +1267,15 @@ const styles = StyleSheet.create({
   iconGalleryOptionSelected: { backgroundColor: '#E6F2F3', borderColor: '#007C83' },
   iconGalleryPair: { alignItems: 'center', flexDirection: 'row', gap: 9, height: 24 },
   iconGalleryLabel: { color: '#102A2E', fontSize: 11, fontWeight: '700', marginTop: 5 },
-  fixedViewModeRow: { backgroundColor: '#E6F2F3', borderColor: '#B8DADC', borderRadius: 12, borderWidth: 1, bottom: 18, flexDirection: 'row', left: 18, padding: 3, position: 'absolute' },
+  fixedViewModeRow: { backgroundColor: '#E6F2F3', borderColor: '#B8DADC', borderRadius: 12, borderWidth: 1, bottom: 18, flexDirection: 'row', left: 18, padding: 3, position: 'absolute', zIndex: 4 },
   viewModeButton: { alignItems: 'center', borderRadius: 8, height: 42, justifyContent: 'center', width: 42 },
   viewModeButtonSelected: { backgroundColor: '#FFFFFF' },
   menuImageFrame: { backgroundColor: '#102A2E', overflow: 'hidden', position: 'relative', width: '100%' },
+  multiPageImageViewer: { backgroundColor: '#F7FAFA', bottom: 78, left: 0, paddingHorizontal: 16, position: 'absolute', right: 0, top: 72, zIndex: 3 },
+  multiPageImageContent: { gap: 12, paddingBottom: 92, paddingTop: 16 },
+  multiPageImageTitle: { color: '#102A2E', fontSize: 20, fontWeight: '800' },
+  scanPageBlock: { gap: 6 },
+  scanPageLabel: { color: '#5A6E71', fontSize: 13, fontWeight: '700' },
   menuImageCanvas: { height: '100%', position: 'absolute', width: '100%' },
   menuImage: { height: '100%', width: '100%' },
   menuImageLabel: { backgroundColor: 'rgba(255, 244, 214, 0.88)', borderColor: '#007C83', borderRadius: 4, borderWidth: 1, justifyContent: 'center', minHeight: 22, overflow: 'visible', paddingHorizontal: 4, position: 'absolute' },
