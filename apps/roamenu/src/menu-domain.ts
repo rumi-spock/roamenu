@@ -75,6 +75,43 @@ export function applyPreferenceMatches(items: MenuItem[], preferences: MenuPrefe
   });
 }
 
+export function menuItemKey(item: Pick<MenuItem, 'originalName' | 'translatedName' | 'priceInPence'>): string {
+  return [item.originalName, item.translatedName, item.priceInPence ?? ''].map((value) => comparableText(String(value))).join('|');
+}
+
+export type MergedScanPage = {
+  sections: string[];
+  items: MenuItem[];
+  pageItems: MenuItem[];
+};
+
+// Each scanned page numbers its sections from 0, so page items are remapped onto the merged section list.
+export function mergeScanPage(current: { sections: string[]; items: MenuItem[] }, page: { sections: string[]; items: MenuItem[] }, pageNumber: number): MergedScanPage {
+  const sections = [...current.sections];
+  const sectionIndexes = page.sections.map((section) => {
+    const key = comparableText(section);
+    const existingIndex = sections.findIndex((candidate) => comparableText(candidate) === key);
+    if (existingIndex >= 0) return existingIndex;
+    sections.push(section);
+    return sections.length - 1;
+  });
+  const pageItems = page.items.map((item) => ({
+    ...item,
+    section: item.section !== null && item.section >= 0 && item.section < sectionIndexes.length ? sectionIndexes[item.section] : null,
+  }));
+  const isAdditionalPage = current.items.length > 0;
+  const seenKeys = new Set(current.items.map(menuItemKey));
+  const newItems = pageItems
+    .filter((item) => {
+      const key = menuItemKey(item);
+      if (seenKeys.has(key)) return false;
+      seenKeys.add(key);
+      return true;
+    })
+    .map((item, index) => (isAdditionalPage ? { ...item, id: `${item.id}-page-${pageNumber}-${index}` } : item));
+  return { sections, items: [...current.items, ...newItems], pageItems };
+}
+
 export function formatMenuPrice(priceInMinorUnits: number, currency: string | null, language: string): string {
   if (!currency || currency === '__UNKNOWN__') {
     try {

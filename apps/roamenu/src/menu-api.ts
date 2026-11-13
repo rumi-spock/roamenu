@@ -1,12 +1,17 @@
 import * as AsyncStorageModule from '@react-native-async-storage/async-storage';
 import { File as ExpoFile } from 'expo-file-system';
 import { fetch as expoFetch } from 'expo/fetch';
+import * as SecureStore from 'expo-secure-store';
+import { Platform } from 'react-native';
 import type { MenuPreference, MenuScanResult, SharedMenu } from './menu-domain';
 
 const authTokenKey = 'roamenu-mobile-auth-token';
+// expo-secure-store has no web implementation; web is only used for local development.
+const usesSecureStore = Platform.OS !== 'web';
 type StorageApi = {
   getItem: (key: string) => Promise<string | null>;
   setItem: (key: string, value: string) => Promise<void>;
+  removeItem: (key: string) => Promise<void>;
 };
 const AsyncStorage = AsyncStorageModule.default as unknown as StorageApi;
 
@@ -209,9 +214,23 @@ export class MenuApi {
 }
 
 export async function loadAuthToken(): Promise<string | null> {
-  return AsyncStorage.getItem(authTokenKey);
+  if (!usesSecureStore) return AsyncStorage.getItem(authTokenKey);
+  const token = await SecureStore.getItemAsync(authTokenKey);
+  if (token) return token;
+  // Builds before secure storage kept the token in AsyncStorage; move it once.
+  const legacyToken = await AsyncStorage.getItem(authTokenKey);
+  if (!legacyToken) return null;
+  await SecureStore.setItemAsync(authTokenKey, legacyToken);
+  await AsyncStorage.removeItem(authTokenKey);
+  return legacyToken;
 }
 
 export async function saveAuthToken(token: string): Promise<void> {
-  await AsyncStorage.setItem(authTokenKey, token);
+  if (usesSecureStore) await SecureStore.setItemAsync(authTokenKey, token);
+  else await AsyncStorage.setItem(authTokenKey, token);
+}
+
+export async function clearAuthToken(): Promise<void> {
+  if (usesSecureStore) await SecureStore.deleteItemAsync(authTokenKey);
+  await AsyncStorage.removeItem(authTokenKey);
 }

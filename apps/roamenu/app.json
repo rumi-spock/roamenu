@@ -36,7 +36,8 @@
           "cameraPermission": "Allow Roamenu to take menu photos."
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      "expo-secure-store"
     ],
     "web": {
       "bundler": "metro"
